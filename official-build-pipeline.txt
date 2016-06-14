@@ -1,0 +1,141 @@
+/*
+ This pipeline code will build a Intellego binary, install on servers and run tests
+*/
+
+stage 'Build the Intellego binary'
+
+node ('10.0.158.153')
+{
+   ws('/home/support/intellego')
+   {
+     echo "Checking out code..."
+     git url: 'ssh://git@10.0.135.6/intellego.git', branch: CODE_BRANCH
+   }
+
+   // Cleanup old binary
+   sh 'sudo rm -rf /home/support/bin/REL_6.5/root/*'
+
+   // Come up with a name for the new BINARY based on timestamp
+   BINARY = INTELLEGO_VERSION + '.' + CODE_BRANCH + '.' + env.BUILD_TIMESTAMP
+
+   echo *** Building BINARY ***
+   //sh 'env'
+   ws('/home/support/intellego/build_tool')
+   {
+     sh 'sudo ./build-intellego.sh ' + BINARY
+   }
+
+   // ******Uncomment when going Live! ********
+   def DIR = '/home/support/bin/REL_' + INTELLEGO_VERSION + '/root/' + BINARY
+   ws("${DIR}")
+   // ******Uncomment when going Live! ********
+
+   //ws('/home/support/bin/REL_6.5/root/6.5.origin-master.2016-06-13_04-00-24')
+   {
+     //stash includes: '*.txt', name: 'VERSION.txt'
+     archive '*.bin'
+   }
+}
+
+stage 'copy bin file to nodes'
+
+parallel 'Node 131': {
+            node('10.0.158.131')
+            {
+                //unstash name: "VERSION.txt"
+                unarchive mapping: ['*.bin' : '.']
+                sh 'sudo rm -f /SS8/SS8_Intellego.bin; sudo mv *.bin /SS8/SS8_Intellego.bin; sudo chmod 775 /SS8/SS8_Intellego.bin'
+                sh "pwd; ls"
+            } //end of node
+        }, // end of 131
+'Node 132': {
+            node('10.0.158.132')
+            {
+                //unstash name: "VERSION.txt"
+                unarchive mapping: ['*.bin' : '.']
+                sh 'sudo rm -f /SS8/SS8_Intellego.bin; sudo mv *.bin /SS8/SS8_Intellego.bin; sudo chmod 775 /SS8/SS8_Intellego.bin'
+                sh "pwd; ls"
+
+            } //end of node
+        }, // end of 132
+'Node 134': {
+            node('10.0.158.134')
+            {
+                //unstash name: "VERSION.txt"
+                unarchive mapping: ['*.bin' : '.']
+                sh 'sudo rm -f /SS8/SS8_Intellego.bin; sudo mv *.bin /SS8/SS8_Intellego.bin; sudo chmod 775 /SS8/SS8_Intellego.bin'
+                sh "pwd; ls"
+
+            } //end of node
+        }, // end of 134
+'Node 147': {
+            node('10.0.158.147')
+            {
+                //unstash name: "VERSION.txt"
+                unarchive mapping: ['*.bin' : '.']
+                sh 'sudo rm -f /SS8/SS8_Intellego.bin; sudo mv *.bin /SS8/SS8_Intellego.bin; sudo chmod 775 /SS8/SS8_Intellego.bin'
+                sh "pwd; ls"
+
+            } //end of node
+        }, // end of 147
+'Node 148': {
+            node('10.0.158.148')
+            {
+                //unstash name: "VERSION.txt"
+                unarchive mapping: ['*.bin' : '.']
+                sh 'sudo rm -f /SS8/SS8_Intellego.bin; sudo mv *.bin /SS8/SS8_Intellego.bin; sudo chmod 775 /SS8/SS8_Intellego.bin'
+                sh "pwd; ls"
+
+            } //end of node
+        }, // end of 148
+'Node 151': {
+            node('10.0.158.151')
+            {
+                //unstash name: "VERSION.txt"
+                unarchive mapping: ['*.bin' : '.']
+                sh 'sudo rm -f /SS8/SS8_Intellego.bin; sudo mv *.bin /SS8/SS8_Intellego.bin; sudo chmod 775 /SS8/SS8_Intellego.bin'
+                sh "pwd; ls"
+
+            } //end of node
+        }, // end of 151
+'Node 152': {
+            node('10.0.158.152')
+            {
+                //unstash name: "VERSION.txt"
+                unarchive mapping: ['*.bin' : '.']
+                sh 'sudo rm -f /SS8/SS8_Intellego.bin; sudo mv *.bin /SS8/SS8_Intellego.bin; sudo chmod 775 /SS8/SS8_Intellego.bin'
+                sh "pwd; ls"
+
+            } //end of node
+        }, // end of 152
+'Node 161': {
+            node('10.0.158.161')
+            {
+                //unstash name: "VERSION.txt"
+                unarchive mapping: ['*.bin' : '.']
+                sh 'sudo rm -f /SS8/SS8_Intellego.bin; sudo mv *.bin /SS8/SS8_Intellego.bin; sudo chmod 775 /SS8/SS8_Intellego.bin'
+                sh "pwd; ls"
+
+            } //end of node
+        } // end of 161
+
+stage 'Install Intellego'
+
+parallel 'Install Intellego on Node 131': {
+            node('10.0.158.131')
+            {
+              sh 'sudo -u root -i ntpdate 10.0.158.153; sudo -u root -i /home/support/stop-install-https.sh'
+              sh 'sudo -u root -i /home/support/copy-datawipe-conf.sh'
+              sh 'sudo -u root -i /etc/init.d/intellego restart; sudo -u root -i /etc/init.d/intellegooamp start'
+              sh 'sudo -u root -i /home/support/checkPorts.sh'
+            } //end of node
+        }, // end of 131
+
+'Install Intellego DPE on Node 132': {
+            node('10.0.158.132')
+            {
+              sh 'sudo -u root -i /home/support/stop-install.sh'
+            } //end of node
+        } // end of 132
+
+
