@@ -2,7 +2,7 @@
  This pipeline code will build a Intellego binary, install on servers and run tests
 */
 
-stage 'Build the Intellego binary'
+stage 'Build Intellego binary'
 
 node ('10.0.158.153')
 {
@@ -37,7 +37,7 @@ node ('10.0.158.153')
    }
 }
 
-stage 'copy bin file to nodes'
+stage 'Copy binary to nodes'
 
 parallel 'Node 131': {
             node('10.0.158.131')
