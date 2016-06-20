@@ -96,7 +96,76 @@ parallel 'Node 131': {
         } // end of 161
 
 
-stage 'Install Intellego'
+stage '134 & 148'
+
+parallel 'Install Intellego DPE on Node 134': {
+            node('10.0.158.134')
+            {
+              sh 'sudo -u root -i /home/support/stop-install.sh'
+            } //end of node
+        }, // end of 134
+
+'Install Intellego on Node 148': {
+            node('10.0.158.148') {
+              sh 'sudo -u root -i service ntpd stop; sudo -u root -i ntpdate 10.0.158.145; sudo -u root -i service ntpd start'
+              sh 'sudo -u root -i /home/support/stop-install-https.sh'
+              sh 'sudo -u root -i /home/support/copy-datawipe-conf.sh'
+              sh 'sudo -u root -i /etc/init.d/intellego restart; sudo -u root -i /etc/init.d/intellegooamp start'
+              sh 'sudo -u root -i /home/support/checkPorts.sh'
+            } //end of node
+       }, // end of 148
+
+'Restart vmc on 134': {
+            node('10.0.158.134') {
+              sh 'sudo -u root -i /home/support/checkVMC.sh'
+            } //node
+       }, //end of 134
+
+'REST API Reporting + DataWipe + IO Workflow': {
+            node('master') {
+              sh 'env'
+              git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
+              sh './gradlew -Dreporting=false -DbuildLogUrl=' + env.BUILD_URL + '/console -DpipelineName=' + pipelineName + ' -Dsuite=resources/suites/v2_level1_tests.xml -Denv=resources/config/qa-at-158-148.yaml run'
+              sh './gradlew -Dreporting=false -DbuildLogUrl=' + env.BUILD_URL + '/console -DpipelineName=' + pipelineName + ' -Dsuite=resources/suites/v2_level2_tests.xml -Denv=resources/config/qa-at-158-148.yaml run'
+              sh './gradlew -Dreporting=false -DbuildLogUrl=' + env.BUILD_URL + '/console -DpipelineName=' + pipelineName + ' -Dsuite=resources/suites/v2_kddi_tests.xml -Denv=resources/config/qa-at-158-148.yaml run'
+            }//node
+       } // REST API
+
+stage '151 & 152'
+
+parallel 'Install Intellego DPE on Node 152': {
+            node('10.0.158.152')
+            {
+              sh 'sudo -u root -i /home/support/stop-install.sh'
+            } //end of node
+        }, // end of 152
+
+'Install Intellego on Node 151': {
+            node('10.0.158.151') {
+              sh 'sudo -u root -i service ntpd stop; sudo -u root -i ntpdate 10.0.158.145; sudo -u root -i service ntpd start'
+              sh 'sudo -u root -i /home/support/stop-install-https.sh'
+              sh 'sudo -u root -i /home/support/copy-datawipe-conf.sh'
+              sh 'sudo -u root -i /etc/init.d/intellego restart; sudo -u root -i /etc/init.d/intellegooamp start'
+              sh 'sudo -u root -i /home/support/checkPorts.sh'
+            } //end of node
+       }, // end of 151
+
+'Restart vmc on 152': {
+            node('10.0.158.152') {
+              sh 'sudo -u root -i /home/support/checkVMC.sh'
+            } //node
+       }, //end of 152
+
+'REST API Reporting + DataWipe + IO Workflow': {
+            node('master') {
+              sh 'env'
+              git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
+              sh './gradlew -Dreporting=false -DbuildLogUrl=' + env.BUILD_URL + '/console -DpipelineName=' + pipelineName + ' -Dsuite=resources/suites/v2_level3_tests.xml -Denv=resources/config/qa-at-158-151.yaml run'
+              sh './gradlew -Dreporting=false -DbuildLogUrl=' + env.BUILD_URL + '/console -DpipelineName=' + pipelineName + ' -Dsuite=resources/suites/v2_all_tests.xml -Denv=resources/config/qa-at-158-151.yaml run'
+            }//node
+       } // REST API
+
+stage '131 & 132'
 
 parallel 'Install Intellego DPE on Node 132': {
             node('10.0.158.132')
@@ -129,4 +198,40 @@ parallel 'Install Intellego DPE on Node 132': {
               sh './gradlew -Dreporting=false -DbuildLogUrl=' + env.BUILD_URL + '/console -DpipelineName=' + pipelineName + ' -Dsuite=resources/suites/v2_datawipe_tests.xml -Denv=resources/config/qa-at-158-131.yaml run'
               sh './gradlew -Dreporting=false -DbuildLogUrl=' + env.BUILD_URL + '/console -DpipelineName=' + pipelineName + ' -Dsuite=resources/suites/v2_io_tests.xml -Denv=resources/config/qa-at-158-131.yaml run'
             }//node
-       } 
+       } //REST API
+
+stage '147 & 161'
+
+parallel 'Install Intellego DPE on Node 147': {
+            node('10.0.158.147')
+            {
+              sh 'sudo -u root -i /home/support/stop-install.sh'
+            } //end of node
+        }, // end of 147
+
+'Install Intellego on Node 161': {
+            node('10.0.158.161') {
+              sh 'sudo -u root -i service ntpd stop; sudo -u root -i ntpdate 10.0.158.153; sudo -u root -i service ntpd start'
+              sh 'sudo -u root -i /home/support/stop-install-https.sh'
+              sh 'sudo -u root -i /home/support/copy-datawipe-conf.sh'
+              sh 'sudo -u root -i /etc/init.d/intellego restart; sudo -u root -i /etc/init.d/intellegooamp start'
+              sh 'sudo -u root -i /home/support/checkPorts.sh'
+            } //end of node
+       }, // end of 161
+
+'Restart vmc on 147': {
+            node('10.0.158.147') {
+              sh 'sudo -u root -i /home/support/checkVMC.sh'
+            } //node
+       }, // end of 147 restart
+
+'REST API v2 regression and Telephony': {
+            node('master') {
+              sh 'env'
+              git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
+              sh './gradlew -Dreporting=false -DbuildLogUrl=' + env.BUILD_URL + '/console -DpipelineName=' + pipelineName + ' -Dsuite=resources/suites/v2_regression_tests.xml -Denv=resources/config/qa-at-158-161.yaml run'
+              sh './gradlew -Dreporting=false -DbuildLogUrl=' + env.BUILD_URL + '/console -DpipelineName=' + pipelineName + ' -Dsuite=resources/suites/v2_telephony_tests.xml -Denv=resources/config/qa-at-158-161.yaml run'
+            }//node
+       } // REST API
+
+
