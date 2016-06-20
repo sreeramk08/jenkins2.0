@@ -127,7 +127,7 @@ parallel '134-148': {
             
 }, //end of 134-148
 
-151-152: {
+'151-152': {
             // Install Intellego DPE on Node 152'
             node('10.0.158.152')
             {
@@ -157,7 +157,7 @@ parallel '134-148': {
             }//node
 }, //151-152 
 
-131-132: {
+'131-132': {
             //'Install Intellego DPE on Node 132'
             node('10.0.158.132')
             {
@@ -187,7 +187,7 @@ parallel '134-148': {
             }//node
 }, // 131-132            
 
-147-161: {
+'147-161': {
             //'Install Intellego DPE on Node 147'
             node('10.0.158.147')
             {
