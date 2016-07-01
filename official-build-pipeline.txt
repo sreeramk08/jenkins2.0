@@ -2,6 +2,7 @@
  This pipeline code will build a Intellego binary, install on servers and run tests
 */
 
+timestamps {
 stage 'Build the Intellego binary'
 
 // "Send an email first!"
@@ -224,6 +225,6 @@ parallel '134-148': {
               sh './gradlew -Dreporting=' + REPORTING + ' -DbuildLogUrl=' + env.BUILD_URL + '/console -DpipelineName=' + pipelineName + ' -Dsuite=resources/suites/v2_telephony_tests.xml -Denv=resources/config/qa-at-158-161.yaml run'
             }//node
 }  // 147-161
-
+} // timestamps
 
 
