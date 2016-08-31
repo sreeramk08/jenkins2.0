@@ -16,102 +16,104 @@ stage 'Build Intellego binary'
     body: 'Parameters - Code: ' + INTELLEGO_CODE_BRANCH + ' RESTAPI: ' + RESTAPI_BRANCH );
   }
   */
-
-  // If prebuilt-binary is present, don't build from scratch
-  if ( PREBUILT_BINARY_PATH ) {
-    echo " ******* Skipping binary building steps ********"
+  // Sometimes we need to just run tests
+  if ( ONLY_RUN_TESTS == 'false' ) {
+    // If prebuilt-binary is present, don't build from scratch
+    if ( PREBUILT_BINARY_PATH ) {
+      echo " ******* Skipping binary building steps ********"
     
-    def DIR = PREBUILT_BINARY_PATH
-    node ('intellego-build-machine') {
-      ws("${DIR}"){
-        archive '*.bin'
+      def DIR = PREBUILT_BINARY_PATH
+      node ('intellego-build-machine') {
+        ws("${DIR}"){
+          archive '*.bin'
+        }
+      } 
+    } //if block
+    else {
+      echo " ******** Building Intellego Binary *********"
+
+      node ('intellego-build-machine') {
+        ws('/home/support/intellego') {
+          echo "Checking out code..."
+          git url: 'ssh://git@10.0.135.6/intellego.git', branch: INTELLEGO_CODE_BRANCH
+        }
+
+      // Cleanup old binary
+      sh 'sudo rm -rf /home/support/bin/REL_' + INTELLEGO_VERSION + '/root/*'
+
+      // Generate name for the new BINARY based on timestamp
+      BINARY = INTELLEGO_VERSION + '.' + INTELLEGO_CODE_BRANCH + '.' + env.BUILD_TIMESTAMP
+
+      ws('/home/support/intellego/build_tool') {
+        sh 'sudo ./build-intellego.sh ' + BINARY
       }
-    } 
-    
-  } //if block
-  else {
-    echo " ******** Building Intellego Binary *********"
 
-    node ('intellego-build-machine') {
-      ws('/home/support/intellego') {
-        echo "Checking out code..."
-        git url: 'ssh://git@10.0.135.6/intellego.git', branch: INTELLEGO_CODE_BRANCH
-      }
-
-    // Cleanup old binary
-    sh 'sudo rm -rf /home/support/bin/REL_6.5/root/*'
-
-    // Generate name for the new BINARY based on timestamp
-    BINARY = INTELLEGO_VERSION + '.' + INTELLEGO_CODE_BRANCH + '.' + env.BUILD_TIMESTAMP
-
-    ws('/home/support/intellego/build_tool') {
-      sh 'sudo ./build-intellego.sh ' + BINARY
-    }
-
-    def DIR = '/home/support/bin/REL_' + INTELLEGO_VERSION + '/root/' + BINARY
-      ws("${DIR}") {
-        archive '*.bin'
-      }
-    }// node
-  } // end of else block
+      def DIR = '/home/support/bin/REL_' + INTELLEGO_VERSION + '/root/' + BINARY
+        ws("${DIR}") {
+          archive '*.bin'
+        }
+      }// node
+    } // end of else block
+  } // end of ONLY_RUN_TESTS 
 
 stage 'Copy Binary to Nodes'
   
-  def COPY_BINARY='sudo rm -f /SS8/SS8_Intellego.bin; sudo mv *.bin /SS8/SS8_Intellego.bin; sudo chmod 775 /SS8/SS8_Intellego.bin'
-
-  parallel 'Node 131': {
-    node('10.0.158.131') {
-      unarchive mapping: ['*.bin' : '.']
-      sh COPY_BINARY
-    } //end of node
-  }, // end of 131
-  'Node 132': {
-    node('10.0.158.132') {
-      unarchive mapping: ['*.bin' : '.']
-      sh COPY_BINARY
-    } //end of node
-   }, // end of 132
-  'Node 134': {
-    node('10.0.158.134') {
-      unarchive mapping: ['*.bin' : '.']
-      sh COPY_BINARY
-    } //end of node
-  }, // end of 134
-  /*
-  'Node 147': {
-    node('10.0.158.147') {
-      unarchive mapping: ['*.bin' : '.']
-      sh COPY_BINARY
-    } //end of node
-  }, // end of 147
-  */
-  'Node 148': {
-    node('10.0.158.148') {
-      unarchive mapping: ['*.bin' : '.']
-      sh COPY_BINARY
-    } //end of node
-  }, // end of 148
-  'Node 151': {
-    node('10.0.158.151') {
-      unarchive mapping: ['*.bin' : '.']
-      sh COPY_BINARY
-    } //end of node
-  }, // end of 151
-  /*
-  'Node 161': {
-    node('10.0.158.161') {
-      unarchive mapping: ['*.bin' : '.']
-      sh COPY_BINARY
-    } //end of node
-  } // end of 161
-  */
-  'Node 152': {
-    node('10.0.158.152') {
-      unarchive mapping: ['*.bin' : '.']
-      sh COPY_BINARY
-    } //end of node
-  } // end of 152
-
+  if ( ONLY_RUN_TESTS == 'false' ) {
+    def COPY_BINARY='sudo rm -f /SS8/SS8_Intellego.bin; sudo mv *.bin /SS8/SS8_Intellego.bin; sudo chmod 775 /SS8/SS8_Intellego.bin'
+  
+    parallel 'Node 131': {
+      node('10.0.158.131') {
+        unarchive mapping: ['*.bin' : '.']
+        sh COPY_BINARY
+      } //end of node
+    }, // end of 131
+    'Node 132': {
+      node('10.0.158.132') {
+        unarchive mapping: ['*.bin' : '.']
+        sh COPY_BINARY
+      } //end of node
+     }, // end of 132
+    'Node 134': {
+      node('10.0.158.134') {
+        unarchive mapping: ['*.bin' : '.']
+        sh COPY_BINARY
+      } //end of node
+    }, // end of 134
+    /*
+    'Node 147': {
+      node('10.0.158.147') {
+        unarchive mapping: ['*.bin' : '.']
+        sh COPY_BINARY
+      } //end of node
+    }, // end of 147
+    */
+    'Node 148': {
+      node('10.0.158.148') {
+        unarchive mapping: ['*.bin' : '.']
+        sh COPY_BINARY
+      } //end of node
+    }, // end of 148
+    'Node 151': {
+      node('10.0.158.151') {
+        unarchive mapping: ['*.bin' : '.']
+        sh COPY_BINARY
+      } //end of node
+    }, // end of 151
+    /*
+    'Node 161': {
+      node('10.0.158.161') {
+        unarchive mapping: ['*.bin' : '.']
+        sh COPY_BINARY
+      } //end of node
+    } // end of 161
+    */
+    'Node 152': {
+      node('10.0.158.152') {
+        unarchive mapping: ['*.bin' : '.']
+        sh COPY_BINARY
+      } //end of node
+    } // end of 152
+  } // end of ONLY_RUN_TESTS block
 
 stage 'Install and Test'
 
@@ -129,24 +131,26 @@ stage 'Install and Test'
   }
 
   parallel '134-148': {
-    //Install Intellego DPE on Node 134
-    node('10.0.158.134') {
-      sh NTPDATE
-      sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+    if ( ONLY_RUN_TESTS == 'false' ) {
+      //Install Intellego DPE on Node 134
+      node('10.0.158.134') {
+        sh NTPDATE
+        sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+      }
+      // Install intellego on 148
+      node('10.0.158.148') {
+        sh NTPDATE
+        sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+        sh COPY_DATAWIPE_CONF
+        sh INTELLEGOOAMP_START
+        sh CHECKPORTS
+      }
+      //Restart vmc on 134
+      node('10.0.158.134') {
+        sh CHECKVMC
+      }
     }
-    // Install intellego on 148
-    node('10.0.158.148') {
-      sh NTPDATE
-      sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
-      sh COPY_DATAWIPE_CONF
-      sh INTELLEGOOAMP_START
-      sh CHECKPORTS
-    }
-    //Restart vmc on 134
-    node('10.0.158.134') {
-      sh CHECKVMC
-    }
-
+ 
     //REST API Tests
     node('master') {
       deleteDir()
@@ -200,29 +204,29 @@ stage 'Install and Test'
 
     // Install Intellego DPE on Node 152'
 
-    node('10.0.158.152') {
-      sh NTPDATE
-      sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
-    } //end of node
-
-    // Install Intellego on Node 151'
-    node('10.0.158.151') {
-      sh NTPDATE
-      sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
-      sh COPY_DATAWIPE_CONF
-      sh INTELLEGOOAMP_START
-      sh CHECKPORTS
-    } //end of node
-
-    //Restart vmc on 152'
-    node('10.0.158.152') {
-      sh CHECKVMC
-    }
+  if ( ONLY_RUN_TESTS == 'false' ) {
+      node('10.0.158.152') {
+        sh NTPDATE
+        sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+      } //end of node
+  
+      // Install Intellego on Node 151'
+      node('10.0.158.151') {
+        sh NTPDATE
+        sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+        sh COPY_DATAWIPE_CONF
+        sh INTELLEGOOAMP_START
+        sh CHECKPORTS
+      } //end of node
+  
+      //Restart vmc on 152'
+      node('10.0.158.152') {
+        sh CHECKVMC
+      }
+   } // end of ONLY_RUN_TESTS block
 
     //REST API Tests'
-
     node('master') {
-
       deleteDir()
       git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
 
@@ -258,25 +262,28 @@ stage 'Install and Test'
   }, //151-152
 
   '131-132': {
-    //'Install Intellego DPE on Node 132'
-    node('10.0.158.132') {
-      sh NTPDATE
-      sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
-    } //end of node
 
-    //Install Intellego on Node 131'
-    node('10.0.158.131') {
-      sh NTPDATE
-      sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
-      sh COPY_DATAWIPE_CONF
-      sh INTELLEGOOAMP_START
-      sh CHECKPORTS
-    } //end of node
-
-    //Restart vmc on 132'
-    node('10.0.158.132') {
-      sh CHECKVMC
-    } //node
+    if ( ONLY_RUN_TESTS == 'false' ) {
+      //'Install Intellego DPE on Node 132'
+      node('10.0.158.132') {
+        sh NTPDATE
+        sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+      } //end of node
+  
+      //Install Intellego on Node 131'
+      node('10.0.158.131') {
+        sh NTPDATE
+        sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+        sh COPY_DATAWIPE_CONF
+        sh INTELLEGOOAMP_START
+        sh CHECKPORTS
+      } //end of node
+  
+      //Restart vmc on 132'
+      node('10.0.158.132') {
+        sh CHECKVMC
+      } //node
+    } // end of ONLY_RUN_TESTS block
 
     //REST API Reporting + DataWipe + IO Workflow'
     node('master') {
@@ -324,27 +331,29 @@ stage 'Install and Test'
   }, // 131-132
 
   '147-161': {
-    /*
-    //'Install Intellego DPE on Node 147'
-    node('10.0.158.147') {
-      sh NTPDATE
-      sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
-    } //end of node
-
-    // Install Intellego on Node 161'
-    node('10.0.158.161') {
-      sh NTPDATE
-      sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
-      sh COPY_DATAWIPE_CONF
-      sh INTELLEGOOAMP_START
-      sh CHECKPORTS
-    } //end of node
-
-    //Restart vmc on 147'
-    node('10.0.158.147') {
-      sh CHECKVMC
-    } //node
-
+      /*
+    if ( ONLY_RUN_TESTS == 'false' ) {
+      //'Install Intellego DPE on Node 147'
+      node('10.0.158.147') {
+        sh NTPDATE
+        sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+      } //end of node
+  
+      // Install Intellego on Node 161'
+      node('10.0.158.161') {
+        sh NTPDATE
+        sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+        sh COPY_DATAWIPE_CONF
+        sh INTELLEGOOAMP_START
+        sh CHECKPORTS
+      } //end of node
+  
+      //Restart vmc on 147'
+      node('10.0.158.147') {
+        sh CHECKVMC
+      } //node
+    } // End of RUN_ONLY_TESTS block
+ 
     //REST API v2 regression and Telephony'
     node('master') {
       deleteDir()
