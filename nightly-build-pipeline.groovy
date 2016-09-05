@@ -160,13 +160,20 @@ stage 'Install and Test'
       if ( run_level1 == 'true') {
         try {
           sh './gradlew -Dreporting=' + REPORTING + ' -DbuildLogUrl=BUILD_URL/console -DpipelineName=Intellego-CI-Coded-Pipeline -Dsuite=resources/suites/v2_level1_tests.xml -Denv=resources/config/qa-at-158-148.yaml run | tee level1.log 2>&1'
-        }
-        catch(err) {
-          currentBuild.result = 'SUCCESS'
-          
+           
           sh 'cp build/reports/tests/emailable-report.html   build/reports/tests/level1.html'
           //sh 'zip -j ' + TMPDIR + '/level1.zip build/reports/tests/level1.html'
-          sh 'cp level1.log build/reports/tests/level1.html ' + TMPDIR
+          sh 'echo "Level 1" > ' + TMPDIR + '/summary.txt' 
+          sh 'grep failed build/reports/tests/testng-results.xml | head -1 >> ' + TMPDIR + '/summary.txt'
+          // copy results to temp directory only if tests failed
+          sh ('grep testng /tmp/testng-results.xml | head -1 | cut -d " " -f3 > FAILED'); FAILED=readFile('FAILED')
+          if (FAILED != 'failed="0"'){
+            echo "Need to copy"
+            sh 'cp level1.log build/reports/tests/level1.html ' + TMPDIR
+          }
+        }// try block closing
+        catch(err) {
+          currentBuild.result = 'SUCCESS'
         }
       } // End of level 1 block
 
@@ -234,12 +241,19 @@ stage 'Install and Test'
 
         try {
           sh './gradlew -Dreporting=' + REPORTING + ' -DbuildLogUrl=BUILD_URL/console -DpipelineName=Intellego-CI-Coded-Pipeline -Dsuite=resources/suites/v2_level3_tests.xml -Denv=resources/config/qa-at-158-151.yaml run | tee level3.log 2>&1'
+          sh 'cp build/reports/tests/emailable-report.html   build/reports/tests/level3.html'
+          //sh 'zip -j ' + TMPDIR + '/level1.zip build/reports/tests/level1.html'
+          sh 'echo "Level 3" > ' + TMPDIR + '/summary.txt' 
+          sh 'grep failed build/reports/tests/testng-results.xml | head -1 >> ' + TMPDIR + '/summary.txt'
+          // copy results to temp directory only if tests failed
+          sh ('grep testng /tmp/testng-results.xml | head -1 | cut -d " " -f3 > FAILED'); FAILED=readFile('FAILED')
+          if (FAILED != 'failed="0"'){
+            echo "Need to copy"
+            sh 'cp level3.log build/reports/tests/level3.html ' + TMPDIR
+          }
         }
         catch(err) {
           currentBuild.result = 'SUCCESS'
-          sh 'cp build/reports/tests/emailable-report.html   build/reports/tests/level3.html'
-          //sh 'zip -j ' + TMPDIR + '/level3.zip build/reports/tests/level3.html'
-          sh 'cp level3.log build/reports/tests/level3.html ' + TMPDIR
         }
       } // End of level3 block
 
@@ -398,8 +412,8 @@ stage 'Install and Test'
         echo "**************** Sending logs from here ********************"
         sh 'pwd; ls'
         try{
-          emailext attachmentsPattern: '*.log, *.html', body: 'Failed REST API Suites and logs are attached (if any).', subject: 'Nightly coded pipeline build has completed! ', to: MAILING_LIST
-          sh 'rm -rf ' + TMPDIR
+          emailext attachmentsPattern: '*.log, *.html, summary.txt', body: 'Failed REST API Suites and logs are attached (if any).', subject: 'Nightly coded pipeline build has completed! ', to: MAILING_LIST
+          //sh 'rm -rf ' + TMPDIR
         }
         catch(err){
           currentBuild.result = 'SUCCESS'    
@@ -410,5 +424,6 @@ stage 'Install and Test'
 //} // timeout
 
   
+
 
 
