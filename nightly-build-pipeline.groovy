@@ -33,25 +33,32 @@ stage 'Build Intellego binary'
       echo " ******** Building Intellego Binary *********"
 
       node ('intellego-build-machine') {
-        ws('/home/support/intellego') {
-          echo "Checking out code..."
-          git url: 'ssh://git@10.0.135.6/intellego.git', branch: INTELLEGO_CODE_BRANCH
-        }
+     
+        try {
+          ws('/home/support/intellego') {
+            echo "Checking out code..."
+            git url: 'ssh://git@10.0.135.6/intellego.git', branch: INTELLEGO_CODE_BRANCH
+          }
 
-      // Cleanup old binary
-      sh 'sudo rm -rf /home/support/bin/REL_' + INTELLEGO_VERSION + '/root/*'
+          // Cleanup old binary
+          sh 'sudo rm -rf /home/support/bin/REL_' + INTELLEGO_VERSION + '/root/*'
 
-      // Generate name for the new BINARY based on timestamp
-      BINARY = INTELLEGO_VERSION + '.' + INTELLEGO_CODE_BRANCH + '.' + env.BUILD_TIMESTAMP
+          // Generate name for the new BINARY based on timestamp
+          BINARY = INTELLEGO_VERSION + '.' + INTELLEGO_CODE_BRANCH + '.' + env.BUILD_TIMESTAMP
 
-      ws('/home/support/intellego/build_tool') {
-        sh 'sudo ./build-intellego.sh ' + BINARY
-      }
+          ws('/home/support/intellego/build_tool') {
+            sh 'sudo ./build-intellego.sh ' + BINARY
+          }
 
-      def DIR = '/home/support/bin/REL_' + INTELLEGO_VERSION + '/root/' + BINARY
-        ws("${DIR}") {
-          archive '*.bin'
-        }
+          def DIR = '/home/support/bin/REL_' + INTELLEGO_VERSION + '/root/' + BINARY
+            ws("${DIR}") {
+            archive '*.bin'
+          }
+        } // try block
+
+        catch(err){
+          emailext body: 'BUILD_URL = ' + env.BUILD_URL, subject: 'Nightly coded pipeline build has failed! ', to: MAILING_LIST
+        } 
       }// node
     } // end of else block
   } // end of ONLY_RUN_TESTS 
@@ -123,9 +130,12 @@ stage 'Install and Test'
   def CHECKPORTS = 'sudo -u root -i /home/support/checkPorts.sh'
   def CHECKVMC = 'sudo -u root -i /home/support/checkVMC.sh'
   def TMPDIR = '/tmp/rest-api-logs-' + INTELLEGO_CODE_BRANCH
+  def TESTS_FAILED = '0'
 
+
+ 
   //Create a temp directory for REST API results
-  node('master') {
+  node('jenkins-slave-1') {
     sh 'rm -rf ' + TMPDIR
     sh 'mkdir -p ' + TMPDIR
   }
@@ -152,10 +162,16 @@ stage 'Install and Test'
     }
  
     //REST API Tests
-    node('master') {
+    node('jenkins-slave-1') {
       deleteDir()
       // Checkout the rest-api code
       git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
+      
+      // Capture all details in Summary.txt before running all tests
+      sh 'echo "\n===== Build Details =====\n" > ' + TMPDIR + '/Summary.txt'
+      sh 'echo "BUILD_URL:" ' + env.BUILD_URL + ' >> ' + TMPDIR + '/Summary.txt' 
+      //sh 'echo INTELLEGO_BINARY: ' + BINARY + ' >> ' + TMPDIR  + '/Summary.txt'
+      sh 'echo "\n=====Rest API Test Results=====\n" >> ' + TMPDIR + '/Summary.txt' 
 
       if ( run_level1 == 'true') {
         try {
@@ -163,28 +179,35 @@ stage 'Install and Test'
            
           sh 'cp build/reports/tests/emailable-report.html   build/reports/tests/level1.html'
           //sh 'zip -j ' + TMPDIR + '/level1.zip build/reports/tests/level1.html'
-          sh 'echo "Level 1" > ' + TMPDIR + '/summary.txt' 
-          sh 'grep failed build/reports/tests/testng-results.xml | head -1 >> ' + TMPDIR + '/summary.txt'
-          // copy results to temp directory only if tests failed
-          sh ('grep testng /tmp/testng-results.xml | head -1 | cut -d " " -f3 > FAILED'); FAILED=readFile('FAILED')
-          if (FAILED != 'failed="0"'){
-            echo "Need to copy"
-            sh 'cp level1.log build/reports/tests/level1.html ' + TMPDIR
-          }
+          sh 'echo "--------------" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'echo "Level 1" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'echo "--------------" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'grep failed build/reports/tests/testng-results.xml | head -1 | sed -e "s/<//" -e "s/>//" -e "s/testng-results //" >> ' + TMPDIR + '/Summary.txt'
+          sh ('grep -wq \"SUCCESSFUL\" level1.log ; echo $?')
+          echo "True: Successful found. No Need to copy logs"
         }// try block closing
         catch(err) {
-          currentBuild.result = 'SUCCESS'
+          currentBuild.result = 'SUCCESS' // If not set to SUCCESS, the pipeline interprets to an entire failed build
+          TESTS_FAILED++  // increment the count of tests failed
+          echo "False. Successful not found.  need to copy"
+          sh 'cp level1.log build/reports/tests/level1.html ' + TMPDIR
         }
       } // End of level 1 block
 
       if (run_level2 == 'true') {
         try {
           sh './gradlew -Dreporting=' + REPORTING + ' -DbuildLogUrl=BUILD_URL/console -DpipelineName=Intellego-CI-Coded-Pipeline -Dsuite=resources/suites/v2_level2_tests.xml -Denv=resources/config/qa-at-158-148.yaml run | tee level2.log 2>&1'
+          sh 'cp build/reports/tests/emailable-report.html   build/reports/tests/level2.html'
+          sh 'echo "--------------" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'echo "Level 2" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'echo "--------------" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'grep failed build/reports/tests/testng-results.xml | head -1 | sed -e "s/<//" -e "s/>//" -e "s/testng-results //" >> ' + TMPDIR + '/Summary.txt'
+          sh ('grep -wq \"SUCCESSFUL\" level2.log ; echo $?')
+          echo "True: Successful found. No Need to copy logs"
         }
         catch(err){
           currentBuild.result = 'SUCCESS'
-          sh 'cp build/reports/tests/emailable-report.html   build/reports/tests/level2.html'
-          //sh 'zip -j ' + TMPDIR + '/level2.zip build/reports/tests/level2.html'
+          TESTS_FAILED++  // increment the count of tests failed
           sh 'cp level2.log build/reports/tests/level2.html ' + TMPDIR
         }
       } // End of level 2 block
@@ -192,18 +215,24 @@ stage 'Install and Test'
       if (run_kddi == 'true') {
         try {
           sh './gradlew -Dreporting=' + REPORTING + ' -DbuildLogUrl=BUILD_URL/console -DpipelineName=Intellego-CI-Coded-Pipeline -Dsuite=resources/suites/v2_kddi_tests.xml -Denv=resources/config/qa-at-158-148.yaml run | tee kddi.log 2>&1'
+          sh 'cp build/reports/tests/emailable-report.html   build/reports/tests/kddi.html'
+          sh 'echo "--------------" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'echo "KDDI" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'echo "--------------" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'grep failed build/reports/tests/testng-results.xml | head -1 | sed -e "s/<//" -e "s/>//" -e "s/testng-results //" >> ' + TMPDIR + '/Summary.txt'
+          sh ('grep -wq \"SUCCESSFUL\" kddi.log ; echo $?')
+          echo "True: Successful found. No Need to copy logs"
         }
         catch(err){
           currentBuild.result = 'SUCCESS'
-          sh 'cp build/reports/tests/emailable-report.html   build/reports/tests/kddi.html'
-          //sh 'zip -j ' + TMPDIR + '/kddi.zip build/reports/tests/kddi.html'
+          TESTS_FAILED++  // increment the count of tests failed
           sh 'cp kddi.log build/reports/tests/kddi.html ' + TMPDIR
         }
       } // End of kddi block
 
         //archive 'build/reports/tests/kddi.html, build/reports/tests/level1.html, build/reports/tests/level2.html'
 
-    } // End of node master block
+    } // End of node jenkins-slave-1 block
 
   }, // end of 134-148 block
 
@@ -233,7 +262,7 @@ stage 'Install and Test'
    } // end of ONLY_RUN_TESTS block
 
     //REST API Tests'
-    node('master') {
+    node('jenkins-slave-1') {
       deleteDir()
       git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
 
@@ -242,30 +271,38 @@ stage 'Install and Test'
         try {
           sh './gradlew -Dreporting=' + REPORTING + ' -DbuildLogUrl=BUILD_URL/console -DpipelineName=Intellego-CI-Coded-Pipeline -Dsuite=resources/suites/v2_level3_tests.xml -Denv=resources/config/qa-at-158-151.yaml run | tee level3.log 2>&1'
           sh 'cp build/reports/tests/emailable-report.html   build/reports/tests/level3.html'
-          //sh 'zip -j ' + TMPDIR + '/level1.zip build/reports/tests/level1.html'
-          sh 'echo "Level 3" > ' + TMPDIR + '/summary.txt' 
-          sh 'grep failed build/reports/tests/testng-results.xml | head -1 >> ' + TMPDIR + '/summary.txt'
-          // copy results to temp directory only if tests failed
-          sh ('grep testng /tmp/testng-results.xml | head -1 | cut -d " " -f3 > FAILED'); FAILED=readFile('FAILED')
-          if (FAILED != 'failed="0"'){
-            echo "Need to copy"
-            sh 'cp level3.log build/reports/tests/level3.html ' + TMPDIR
-          }
-        }
+          sh 'echo "--------------" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'echo "Level 3" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'echo "--------------" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'grep failed build/reports/tests/testng-results.xml | head -1 | sed -e "s/<//" -e "s/>//" -e "s/testng-results //" >> ' + TMPDIR + '/Summary.txt'
+          sh ('grep -wq \"SUCCESSFUL\" level3.log ; echo $?')
+          echo "True: Successful found. No Need to copy logs"
+        }// try block closing
         catch(err) {
           currentBuild.result = 'SUCCESS'
-        }
+          TESTS_FAILED++  // increment the count of tests failed
+          echo "False. Successful not found.  need to copy"
+          sh 'cp level3.log build/reports/tests/level3.html ' + TMPDIR
+        } 
+        
       } // End of level3 block
+ 
 
       if (run_alltests == 'true') {
  
         try {
           sh './gradlew -Dreporting=' + REPORTING + ' -DbuildLogUrl=BUILD_URL/console -DpipelineName=Intellego-CI-Coded-Pipeline -Dsuite=resources/suites/v2_all_tests.xml -Denv=resources/config/qa-at-158-151.yaml run | tee all-tests.log 2>&1'
+          sh 'cp build/reports/tests/emailable-report.html   build/reports/tests/all-tests.html'
+          sh 'echo "--------------" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'echo "All Tests" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'echo "--------------" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'grep failed build/reports/tests/testng-results.xml | head -1 | sed -e "s/<//" -e "s/>//" -e "s/testng-results //" >> ' + TMPDIR + '/Summary.txt'
+          sh ('grep -wq \"SUCCESSFUL\" all-tests.log ; echo $?')
+          echo "True: Successful found. No Need to copy logs"
         }
         catch(err){
           currentBuild.result = 'SUCCESS'
-          sh 'cp build/reports/tests/emailable-report.html   build/reports/tests/all-tests.html'
-          //sh 'zip -j ' + TMPDIR + '/all-tests.zip build/reports/tests/all-tests.html'
+          TESTS_FAILED++  // increment the count of tests failed
           sh 'cp all-tests.log build/reports/tests/all-tests.html ' + TMPDIR
         }
       } // End of all-tests
@@ -300,7 +337,7 @@ stage 'Install and Test'
     } // end of ONLY_RUN_TESTS block
 
     //REST API Reporting + DataWipe + IO Workflow'
-    node('master') {
+    node('jenkins-slave-1') {
       deleteDir()
       git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
 
@@ -308,11 +345,17 @@ stage 'Install and Test'
 
         try {
           sh './gradlew -Dreporting=' + REPORTING + ' -DbuildLogUrl=BUILD_URL/console -DpipelineName=Intellego-CI-Coded-Pipeline -Dsuite=resources/suites/v2_reporting_tests.xml -Denv=resources/config/qa-at-158-131.yaml run | tee reporting.log 2>&1'
+          sh 'cp build/reports/tests/emailable-report.html   build/reports/tests/reporting.html'
+          sh 'echo "--------------" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'echo "Reporting Tests" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'echo "--------------" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'grep failed build/reports/tests/testng-results.xml | head -1 | sed -e "s/<//" -e "s/>//" -e "s/testng-results //" >> ' + TMPDIR + '/Summary.txt'
+          sh ('grep -wq \"SUCCESSFUL\" reporting.log ; echo $?')
+          echo "True: Successful found. No Need to copy logs"
         }
         catch(err) {
           currentBuild.result = 'SUCCESS'
-          sh 'cp build/reports/tests/emailable-report.html   build/reports/tests/reporting.html'
-          //sh 'zip -j ' + TMPDIR + '/reporting.zip build/reports/tests/reporting.html'
+          TESTS_FAILED++  // increment the count of tests failed
           sh 'cp reporting.log build/reports/tests/reporting.html ' + TMPDIR
         }
       } // End of reporting block
@@ -320,11 +363,16 @@ stage 'Install and Test'
       if (run_datawipe == 'true'){
         try {
           sh './gradlew -Dreporting=' + REPORTING + ' -DbuildLogUrl=BUILD_URL/console -DpipelineName=Intellego-CI-Coded-Pipeline -Dsuite=resources/suites/v2_datawipe_tests.xml -Denv=resources/config/qa-at-158-131.yaml run | tee datawipe.log 2>&1'
+          sh 'cp build/reports/tests/emailable-report.html   build/reports/tests/datawipe.html'
+          sh 'echo "--------------" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'echo "Datawipe" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'echo "--------------" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'grep failed build/reports/tests/testng-results.xml | head -1 | sed -e "s/<//" -e "s/>//" -e "s/testng-results //" >> ' + TMPDIR + '/Summary.txt'
+          sh ('grep -wq \"SUCCESSFUL\" datawipe.log ; echo $?')
+          echo "True: Successful found. No Need to copy logs"
         }
         catch(err) {
           currentBuild.result = 'SUCCESS'
-          sh 'cp build/reports/tests/emailable-report.html   build/reports/tests/datawipe.html'
-          // sh 'zip -j ' + TMPDIR + '/datawipe.zip build/reports/tests/datawipe.html'
           sh 'cp datawipe.log build/reports/tests/datawipe.html ' + TMPDIR
         }
       } //End of datawipe block
@@ -332,11 +380,17 @@ stage 'Install and Test'
       if (run_io == 'true') {
         try {
           sh './gradlew -Dreporting=' + REPORTING + ' -DbuildLogUrl=BUILD_URL/console -DpipelineName=Intellego-CI-Coded-Pipeline -Dsuite=resources/suites/v2_io_tests.xml -Denv=resources/config/qa-at-158-131.yaml run | tee io-tests.log 2>&1'
+          sh 'cp build/reports/tests/emailable-report.html   build/reports/tests/io-tests.html'
+          sh 'echo "--------------" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'echo "IO Tests" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'echo "--------------" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'grep failed build/reports/tests/testng-results.xml | head -1 | sed -e "s/<//" -e "s/>//" -e "s/testng-results //" >> ' + TMPDIR + '/Summary.txt'
+          sh ('grep -wq \"SUCCESSFUL\" io-tests.log ; echo $?')
+          echo "True: Successful found. No Need to copy logs"
         }
         catch(err) {
           currentBuild.result = 'SUCCESS'
-          sh 'cp build/reports/tests/emailable-report.html   build/reports/tests/io-tests.html'
-          //sh 'zip -j ' + TMPDIR + '/io-tests.zip build/reports/tests/io-tests.html'
+          TESTS_FAILED++  // increment the count of tests failed
           sh 'cp io-tests.log build/reports/tests/io-tests.html ' + TMPDIR
         }
         // archive 'build/reports/tests/reporting.html, build/reports/tests/datawipe.html, build/reports/tests/io-tests.html'
@@ -369,18 +423,24 @@ stage 'Install and Test'
     } // End of RUN_ONLY_TESTS block
  
     //REST API v2 regression and Telephony'
-    node('master') {
+    node('jenkins-slave-1') {
       deleteDir()
       git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
     
       if (run_regression == 'true') {
         try {
         sh './gradlew -Dreporting=' + REPORTING + ' -DbuildLogUrl=BUILD_URL/console -DpipelineName=Intellego-CI-Coded-Pipeline -Dsuite=resources/suites/v2_regression_tests.xml -Denv=resources/config/qa-at-158-161.yaml run | tee regression.log 2>&1'
+          sh 'cp build/reports/tests/emailable-report.html   build/reports/tests/regression.html'
+          sh 'echo "--------------" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'echo "Regression" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'echo "--------------" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'grep failed build/reports/tests/testng-results.xml | head -1 | sed -e "s/<//" -e "s/>//" -e "s/testng-results //" >> ' + TMPDIR + '/Summary.txt'
+          sh ('grep -wq \"SUCCESSFUL\" regression.log ; echo $?')
+          echo "True: Successful found. No Need to copy logs"
         }
         catch(err) {
           currentBuild.result = 'SUCCESS'
-          sh 'cp build/reports/tests/emailable-report.html   build/reports/tests/regression.html'
-          // sh 'zip -j ' + TMPDIR + '/regression.zip build/reports/tests/regression.html'
+          TESTS_FAILED++  // increment the count of tests failed
           sh 'cp regression.log build/reports/tests/regression.html ' + TMPDIR
         }
       } // End of regression block
@@ -388,11 +448,17 @@ stage 'Install and Test'
       if (run_telephony == 'true') {
         try {
           sh './gradlew -Dreporting=' + REPORTING + ' -DbuildLogUrl=BUILD_URL/console -DpipelineName=Intellego-CI-Coded-Pipeline -Dsuite=resources/suites/v2_telephony_tests.xml -Denv=resources/config/qa-at-158-161.yaml run | tee telephony.log 2>&1'
+          sh 'cp build/reports/tests/emailable-report.html   build/reports/tests/telephony.html'
+          sh 'echo "--------------" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'echo "Telephony" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'echo "--------------" >> ' + TMPDIR + '/Summary.txt' 
+          sh 'grep failed build/reports/tests/testng-results.xml | head -1 | sed -e "s/<//" -e "s/>//" -e "s/testng-results //" >> ' + TMPDIR + '/Summary.txt'
+          sh ('grep -wq \"SUCCESSFUL\" telephony.log ; echo $?')
+          echo "True: Successful found. No Need to copy logs"
         }
         catch(err) {
           currentBuild.result = 'SUCCESS'
-          sh 'cp build/reports/tests/emailable-report.html   build/reports/tests/telephony.html'
-          // sh 'zip -j ' + TMPDIR + '/telephony.zip build/reports/tests/telephony.html'
+          TESTS_FAILED++  // increment the count of tests failed
           sh 'cp telephony.log build/reports/tests/telephony.html ' + TMPDIR
         }
       } // End of telephony block
@@ -406,14 +472,17 @@ stage 'Install and Test'
       
   } // End of 147-161 and parallel block
 
-  node('master'){
+  node('jenkins-slave-1'){
      ws ("${TMPDIR}") {
          
         echo "**************** Sending logs from here ********************"
         sh 'pwd; ls'
+        sh 'echo "No. of TEST SUITES FAILED: " ' + TESTS_FAILED + ' >> ' + TMPDIR + '/Summary.txt' 
         try{
-          emailext attachmentsPattern: '*.log, *.html, summary.txt', body: 'Failed REST API Suites and logs are attached (if any).', subject: 'Nightly coded pipeline build has completed! ', to: MAILING_LIST
+          emailext attachmentsPattern: '*.log, *.html, Summary.txt', body: 'BUILD_URL = ' + env.BUILD_URL, subject: 'Nightly coded pipeline build has completed! ', to: MAILING_LIST
           //sh 'rm -rf ' + TMPDIR
+          sh 'zip -j Failed_Test_Results.zip ' + TMPDIR + '/*'
+          archive 'Failed_Test_Results.zip, Summary.txt'
         }
         catch(err){
           currentBuild.result = 'SUCCESS'    
