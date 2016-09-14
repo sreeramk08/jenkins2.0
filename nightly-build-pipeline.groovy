@@ -16,6 +16,14 @@ stage 'Build Intellego binary'
     body: 'Parameters - Code: ' + INTELLEGO_CODE_BRANCH + ' RESTAPI: ' + RESTAPI_BRANCH );
   }
   */
+  def TMPDIR = '/tmp/rest-api-logs-' + INTELLEGO_CODE_BRANCH
+
+  //Create a temp directory for REST API results
+  node('jenkins-slave-1') {
+    sh 'rm -rf ' + TMPDIR
+    sh 'mkdir -p ' + TMPDIR
+  }
+
   // Sometimes we need to just run tests
   if ( ONLY_RUN_TESTS == 'false' ) {
     // If prebuilt-binary is present, don't build from scratch
@@ -57,7 +65,7 @@ stage 'Build Intellego binary'
         } // try block
 
         catch(err){
-          emailext body: 'BUILD_URL = ' + env.BUILD_URL, subject: 'Nightly coded pipeline build has failed! ', to: MAILING_LIST
+          emailext body: 'BUILD_URL = ' + env.BUILD_URL + '/consoleFull', subject: 'Nightly coded pipeline build has failed! ', to: MAILING_LIST
         } 
       }// node
     } // end of else block
@@ -86,14 +94,12 @@ stage 'Copy Binary to Nodes'
         sh COPY_BINARY
       } //end of node
     }, // end of 134
-    /*
     'Node 147': {
       node('10.0.158.147') {
         unarchive mapping: ['*.bin' : '.']
         sh COPY_BINARY
       } //end of node
     }, // end of 147
-    */
     'Node 148': {
       node('10.0.158.148') {
         unarchive mapping: ['*.bin' : '.']
@@ -106,14 +112,12 @@ stage 'Copy Binary to Nodes'
         sh COPY_BINARY
       } //end of node
     }, // end of 151
-    /*
     'Node 161': {
       node('10.0.158.161') {
         unarchive mapping: ['*.bin' : '.']
         sh COPY_BINARY
       } //end of node
-    } // end of 161
-    */
+    }, // end of 161
     'Node 152': {
       node('10.0.158.152') {
         unarchive mapping: ['*.bin' : '.']
@@ -123,24 +127,17 @@ stage 'Copy Binary to Nodes'
   } // end of ONLY_RUN_TESTS block
 
 stage 'Install and Test'
-
+ 
+  
   def NTPDATE = 'sudo -u root -i service ntpd stop; sudo -u root -i ntpdate 10.0.158.153; sudo -u root -i service ntpd start'
   def COPY_DATAWIPE_CONF = 'sudo -u root -i /home/support/copy-datawipe-conf.sh'
   def INTELLEGOOAMP_START = 'sudo -u root -i /etc/init.d/intellego restart; sudo -u root -i /etc/init.d/intellegooamp start'
   def CHECKPORTS = 'sudo -u root -i /home/support/checkPorts.sh'
   def CHECKVMC = 'sudo -u root -i /home/support/checkVMC.sh'
-  def TMPDIR = '/tmp/rest-api-logs-' + INTELLEGO_CODE_BRANCH
   def TESTS_FAILED = '0'
 
-
- 
-  //Create a temp directory for REST API results
-  node('jenkins-slave-1') {
-    sh 'rm -rf ' + TMPDIR
-    sh 'mkdir -p ' + TMPDIR
-  }
-
   parallel '134-148': {
+
     if ( ONLY_RUN_TESTS == 'false' ) {
       //Install Intellego DPE on Node 134
       node('10.0.158.134') {
@@ -159,7 +156,7 @@ stage 'Install and Test'
       node('10.0.158.134') {
         sh CHECKVMC
       }
-    }
+    } // end of if ONLY_RUN_TESTS
  
     //REST API Tests
     node('jenkins-slave-1') {
@@ -338,6 +335,7 @@ stage 'Install and Test'
 
     //REST API Reporting + DataWipe + IO Workflow'
     node('jenkins-slave-1') {
+    //node('master') {
       deleteDir()
       git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
 
@@ -378,6 +376,8 @@ stage 'Install and Test'
       } //End of datawipe block
 
       if (run_io == 'true') {
+        deleteDir()
+        git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH  
         try {
           sh './gradlew -Dreporting=' + REPORTING + ' -DbuildLogUrl=BUILD_URL/console -DpipelineName=Intellego-CI-Coded-Pipeline -Dsuite=resources/suites/v2_io_tests.xml -Denv=resources/config/qa-at-158-131.yaml run | tee io-tests.log 2>&1'
           sh 'cp build/reports/tests/emailable-report.html   build/reports/tests/io-tests.html'
@@ -392,6 +392,7 @@ stage 'Install and Test'
           currentBuild.result = 'SUCCESS'
           TESTS_FAILED++  // increment the count of tests failed
           sh 'cp io-tests.log build/reports/tests/io-tests.html ' + TMPDIR
+          stash "io-tests.log, io-tests.html"
         }
         // archive 'build/reports/tests/reporting.html, build/reports/tests/datawipe.html, build/reports/tests/io-tests.html'
       } // end of io block
@@ -399,7 +400,7 @@ stage 'Install and Test'
   }, // 131-132
 
   '147-161': {
-      /*
+      
     if ( ONLY_RUN_TESTS == 'false' ) {
       //'Install Intellego DPE on Node 147'
       node('10.0.158.147') {
@@ -464,11 +465,9 @@ stage 'Install and Test'
       } // End of telephony block
 
         //archive 'build/reports/tests/regression.html, build/reports/tests/telephony.html'
-
         //archive 'regression.zip, telephony.zip'
-        
     } //node
-    */ 
+
       
   } // End of 147-161 and parallel block
 
@@ -477,7 +476,7 @@ stage 'Install and Test'
          
         echo "**************** Sending logs from here ********************"
         sh 'pwd; ls'
-        sh 'echo "No. of TEST SUITES FAILED: " ' + TESTS_FAILED + ' >> ' + TMPDIR + '/Summary.txt' 
+        sh 'echo "\nNo. of TEST SUITES FAILED: " ' + TESTS_FAILED + ' >> ' + TMPDIR + '/Summary.txt' 
         try{
           emailext attachmentsPattern: '*.log, *.html, Summary.txt', body: 'BUILD_URL = ' + env.BUILD_URL, subject: 'Nightly coded pipeline build has completed! ', to: MAILING_LIST
           //sh 'rm -rf ' + TMPDIR
@@ -493,6 +492,7 @@ stage 'Install and Test'
 //} // timeout
 
   
+
 
 
 
