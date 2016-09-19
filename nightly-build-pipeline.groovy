@@ -3,10 +3,10 @@
 */
 
 def TESTS_FAILED = '0'
-def TMPDIR = '/tmp/rest-api-logs-' + INTELLEGO_CODE_BRANCH
+def TMPDIR = '/tmp/rest-api-logs-' + RESTAPI_BRANCH
 
   //Create a temp directory for REST API results
-  node('jenkins-slave-1') {
+  node('jenkins-slave') {
     sh 'rm -rf ' + TMPDIR
     sh 'mkdir -p ' + TMPDIR
   }
@@ -14,7 +14,7 @@ def TMPDIR = '/tmp/rest-api-logs-' + INTELLEGO_CODE_BRANCH
 
 def run_suite(suite, env) {
 
-  def TMPDIR = '/tmp/rest-api-logs-' + INTELLEGO_CODE_BRANCH
+  def TMPDIR = '/tmp/rest-api-logs-' + RESTAPI_BRANCH
 
   try { 
     sh './gradlew -Dreporting=' + REPORTING + ' -DbuildLogUrl=BUILD_URL/console -DpipelineName=Intellego-CI-Coded-Pipeline -Dsuite=resources/suites/' + suite + '.xml -Denv=resources/config/' + env + ' run | tee ' + suite + '.log 2>&1'
@@ -188,7 +188,7 @@ stage 'Install and Test'
     } // end of if ONLY_RUN_TESTS
     
     //REST API Tests
-    node('jenkins-slave-1') {
+    node('jenkins-slave') {
       deleteDir()
       // Checkout the rest-api code
       git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
@@ -214,7 +214,7 @@ stage 'Install and Test'
         run_suite ( 'kddi_tests', 'qa-at-158-148.yaml' )
       } 
 
-    } // End of node jenkins-slave-1 block
+    } // End of node jenkins-slave block
 
   }, // end of 134-148 block
 
@@ -243,7 +243,7 @@ stage 'Install and Test'
    } // end of ONLY_RUN_TESTS block
 
     //REST API Tests'
-    node('jenkins-slave-1') {
+    node('jenkins-slave') {
       deleteDir()
       git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
 
@@ -286,7 +286,7 @@ stage 'Install and Test'
   
 
     //REST API Reporting + DataWipe + IO Workflow'
-    node('jenkins-slave-1') {
+    node('jenkins-slave') {
     //node('master') {
       deleteDir()
       git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
@@ -332,7 +332,7 @@ stage 'Install and Test'
     } // End of RUN_ONLY_TESTS block
  
     //REST API v2 regression and Telephony'
-    node('jenkins-slave-1') {
+    node('jenkins-slave') {
       deleteDir()
       git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
 
@@ -348,7 +348,7 @@ stage 'Install and Test'
       
   } // End of 147-161 and parallel block
 
-  node('jenkins-slave-1'){
+  node('jenkins-slave'){
      ws ("${TMPDIR}") {
 
         echo "**************** Sending logs from here ********************"
