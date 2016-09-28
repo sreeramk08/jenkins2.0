@@ -53,6 +53,13 @@ stage 'Build Intellego binary'
   }
   */
 
+  // check if ISO needs to be upgraded
+  if ( ISO_UPGRADE ) {
+    node ('master') {
+       build job: 'upgrade-intellego-vms', parameters: [[$class: 'StringParameterValue', name: 'HOSTS', value: '10.0.158.131, 10.0.158.132, 10.0.158.134, 10.0.158.147, 10.0.158.148, 10.0.158.151, 10.0.158.152, 10.0.158.161'], [$class: 'StringParameterValue', name: 'VERSION', value: ISO_UPGRADE ], [$class: 'StringParameterValue', name: 'PRODUCT', value: 'intellego']]
+    } 
+  }
+
   if ( ONLY_RUN_TESTS == 'false' ) {
 
     // If prebuilt-binary is present, don't build from scratch
@@ -196,7 +203,9 @@ stage 'Install and Test'
       // Capture all details in Summary.html before running all tests
       sh 'echo "<h3>Nightly build pipeline has completed!</h3>" > ' + TMPDIR + '/Summary.html'
       sh 'echo "<b>Build Details:</b>" >> ' + TMPDIR + '/Summary.html'
-      sh 'echo "<p>Console Output: <a href= "' + env.BUILD_URL + '"consoleFull>"' + env.BUILD_URL + '"consoleFull</a>"' + ' >> ' + TMPDIR + '/Summary.html' 
+      sh 'echo "<p>Intellego Source Branch - " ' + INTELLEGO_CODE_BRANCH + ' >> ' + TMPDIR + '/Summary.html'
+      sh 'echo "<p>Rest API Branch - " ' + RESTAPI_BRANCH + ' >> ' + TMPDIR + '/Summary.html'
+      sh 'echo "<p>Console Output - <a href= "' + env.BUILD_URL + '"consoleFull>"' + env.BUILD_URL + '"consoleFull</a>"' + ' >> ' + TMPDIR + '/Summary.html' 
       //sh 'echo INTELLEGO_BINARY: ' + BINARY + ' >> ' + TMPDIR  + '/Summary.html'
       sh 'echo "<p>" >> ' + TMPDIR + '/Summary.html'
       sh 'echo "<b>Rest API Test Results:</b>" >> ' + TMPDIR + '/Summary.html' 
@@ -251,8 +260,12 @@ stage 'Install and Test'
         run_suite ( 'level3_tests', 'qa-at-158-151.yaml' )
       } 
      
-      if ( run_alltests== 'true' ) {
+      if ( run_alltests == 'true' ) {
         run_suite ( 'all_tests', 'qa-at-158-151.yaml' )
+      } 
+
+      if ( run_rtf == 'true' ) {
+        run_suite ( 'rtf_all', 'qa-at-158-151.yaml' )
       } 
 
     }//node
@@ -354,7 +367,8 @@ stage 'Install and Test'
         echo "**************** Sending logs from here ********************"
         //sh 'echo "\nNo. of TEST SUITES FAILED: " ' + TESTS_FAILED + ' >> ' + TMPDIR + '/Summary.html' 
         try{
-          emailext attachmentsPattern: '*.log, *.html', body: 'BUILD_URL = ' + env.BUILD_URL, subject: 'Nightly coded pipeline build has completed! ', to: MAILING_LIST
+          emailext attachmentsPattern: '*.log, *.html', body: 'BUILD_URL = ' + env.BUILD_URL, subject: 'END Intellego Coded Pipeline Build SOURCE - ' + INTELLEGO_CODE_BRANCH + ' RESTAPI - ' + RESTAPI_BRANCH, to: MAILING_LIST
+
           //sh 'rm -rf ' + TMPDIR
           sh 'zip -j Failed_Test_Results.zip ' + TMPDIR + '/*'
           archive 'Failed_Test_Results.zip, Summary.html'
@@ -367,6 +381,7 @@ stage 'Install and Test'
 } // End of timestamp block  
 
   
+
 
 
 
