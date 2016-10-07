@@ -267,6 +267,11 @@ stage 'Install and Test'
       if ( run_rtf == 'true' ) {
         run_suite ( 'rtf_all', 'qa-at-158-151.yaml' )
       } 
+      
+      if ( run_regression == 'true' ) {
+        run_suite ( 'regression_tests', 'qa-at-158-151.yaml' )
+      } 
+      
 
     }//node
 
@@ -315,6 +320,10 @@ stage 'Install and Test'
       if ( run_io== 'true' ) {
         run_suite ( 'io_tests', 'qa-at-158-131.yaml' )
       } 
+      
+       if ( run_telephony== 'true' ) {
+        run_suite ( 'telephony_tests', 'qa-at-158-131.yaml' )
+      } 
   
     }//node
 
@@ -349,13 +358,7 @@ stage 'Install and Test'
       deleteDir()
       git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
 
-    if ( run_regression == 'true' ) {
-        run_suite ( 'regression_tests', 'qa-at-158-161.yaml' )
-      } 
-      
-      if ( run_telephony== 'true' ) {
-        run_suite ( 'telephony_tests', 'qa-at-158-161.yaml' )
-      } 
+// keep this not running any test so Rajesh can use this pair to do his tests
 
     } //node
       
@@ -381,6 +384,7 @@ stage 'Install and Test'
 } // End of timestamp block  
 
   
+
 
 
 
