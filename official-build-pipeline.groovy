@@ -98,6 +98,11 @@ timestamps {
 					//increment the build number
 					try{
 						int BN = BUILD_NUMBER.toInteger()
+						
+						if (BN == "null") {
+							echo "Did not get a build number. First build!"
+							// Call the function that gets the changes from previous git tag
+						}
 						echo "The build number is: " + BN
 						NEXT_BUILD_NUMBER = BN + 1
 						echo "The Next build number is: " + NEXT_BUILD_NUMBER
