@@ -168,8 +168,6 @@ timestamps {
 					CURRENT_BUILD_NUMBER = INTELLEGO_VERSION + '.' + MINOR_VERSION +'.' + PATCH_VERSION + '.' + NEXT_BUILD_NUMBER
 					currentBuild.displayName = CURRENT_BUILD_NUMBER
 					
-					echo "::::::::: BUILD VERSION CHOSEN FOR THIS BUILD is " + CURRENT_BUILD_NUMBER  + " ::::::::::::"
-					
 					//Tag Git and Build the binary  
 					try {
 						sh 'git tag -a ' + CURRENT_BUILD_NUMBER + ' -m "Intellego Build No. ' + CURRENT_BUILD_NUMBER + '"'
@@ -181,9 +179,6 @@ timestamps {
 						throw err
 					}
 					
-					// Build the binary now!
-					sh 'cd build_tool; ./build-intellego.sh ' + CURRENT_BUILD_NUMBER  
-					
 					//Determine changes depending on if its a first build or not
 					if ( FIRST_BUILD == "yes" ){
 					   first_build_changes(INTELLEGO_VERSION, CURRENT_BUILD_NUMBER) 
@@ -192,6 +187,14 @@ timestamps {
 					   PREV_BUILD_NUMBER = INTELLEGO_VERSION + '.' + MINOR_VERSION +'.' + PATCH_VERSION + '.' + buildNumber
 					   build_changes(PREV_BUILD_NUMBER, CURRENT_BUILD_NUMBER)
 					}
+					
+					// After changes are calculated, we can build the binary now!
+					
+					echo ":::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::"
+					echo "::::::::: BUILDING INTELLEGO OFFICIAL BINARY " + CURRENT_BUILD_NUMBER  + " ::::::::::::"
+					echo ":::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::"
+					
+					sh 'cd build_tool; ./build-intellego.sh ' + CURRENT_BUILD_NUMBER  
 					
 					// archive the binary to copy to the other nodes
 					def DIR = '/intellego/bin/REL_' + INTELLEGO_VERSION + '/intelbld/' + CURRENT_BUILD_NUMBER

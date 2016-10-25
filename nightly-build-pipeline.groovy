@@ -2,6 +2,8 @@
  This pipeline code will build a Intellego binary, install on servers and run tests
 */
 
+currentBuild.displayName = INTELLEGO_VERSION + ' Build. SRC:' + INTELLEGO_CODE_BRANCH + ' REST:' + RESTAPI_BRANCH + ' No:' + env.BUILD_NUMBER
+
 def TESTS_FAILED = '0'
 def TMPDIR = '/tmp/rest-api-logs-' + RESTAPI_BRANCH
 
