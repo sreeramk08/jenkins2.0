@@ -183,22 +183,28 @@ stage ('Install and Test') {
 		if ( ONLY_RUN_TESTS == 'false' ) {
 		
 		    timeout(time:1, unit:'HOURS') {
-				//Install Intellego DPE on Node 134
-				node('10.0.158.134') {
-					sh NTPDATE
-					sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+			    try {
+					//Install Intellego DPE on Node 134
+					node('10.0.158.134') {
+						sh NTPDATE
+						sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+					}
+					// Install intellego on 148
+					node('10.0.158.148') {
+						sh NTPDATE
+						sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+						sh COPY_DATAWIPE_CONF
+						sh INTELLEGOOAMP_START
+						sh CHECKPORTS
+					}
+					//Restart vmc on 134
+					node('10.0.158.134') {
+						sh CHECKVMC
+					}
 				}
-				// Install intellego on 148
-				node('10.0.158.148') {
-					sh NTPDATE
-					sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
-					sh COPY_DATAWIPE_CONF
-					sh INTELLEGOOAMP_START
-					sh CHECKPORTS
-				}
-				//Restart vmc on 134
-				node('10.0.158.134') {
-					sh CHECKVMC
+				catch(err){
+					emailext attachLog: 'true', subject: 'Installing Intellego: Nightly build failed at 134-148 step', to: MAILING_LIST
+					throw err
 				}
 			} // end of timeout block
 		} // end of if ONLY_RUN_TESTS
@@ -240,23 +246,29 @@ stage ('Install and Test') {
 		// Install Intellego DPE on Node 152'
 		if ( ONLY_RUN_TESTS == 'false' ) {
 			timeout(time:1, unit:'HOURS') {
-				node('10.0.158.152') {
-					sh NTPDATE
-					sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
-				} //end of node
+				try {
+					node('10.0.158.152') {
+						sh NTPDATE
+						sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+					} //end of node
 
-				// Install Intellego on Node 151'
-				node('10.0.158.151') {
-					sh NTPDATE
-					sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
-					sh COPY_DATAWIPE_CONF
-					sh INTELLEGOOAMP_START
-					sh CHECKPORTS
-				} //end of node
+					// Install Intellego on Node 151'
+					node('10.0.158.151') {
+						sh NTPDATE
+						sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+						sh COPY_DATAWIPE_CONF
+						sh INTELLEGOOAMP_START
+						sh CHECKPORTS
+					} //end of node
 
-				//Restart vmc on 152'
-				node('10.0.158.152') {
-					sh CHECKVMC
+					//Restart vmc on 152'
+					node('10.0.158.152') {
+						sh CHECKVMC
+					}
+				}
+				catch(err){
+					emailext attachLog: 'true', subject: 'Installing Intellego: Nightly build failed at 151-152 step', to: MAILING_LIST
+					throw err
 				}
 			} //end of timeout block
 		} // end of ONLY_RUN_TESTS block
@@ -291,25 +303,31 @@ stage ('Install and Test') {
 
 		if ( ONLY_RUN_TESTS == 'false' ) {
 			timeout(time:1, unit:'HOURS') {
-				//'Install Intellego DPE on Node 132'
-				node('10.0.158.132') {
-					sh NTPDATE
-					sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
-				} //end of node
+				try {
+					//'Install Intellego DPE on Node 132'
+					node('10.0.158.132') {
+						sh NTPDATE
+						sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+					} //end of node
 
-				//Install Intellego on Node 131'
-				node('10.0.158.131') {
-					sh NTPDATE
-					sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
-					sh COPY_DATAWIPE_CONF
-					sh INTELLEGOOAMP_START
-					sh CHECKPORTS
-				} //end of node
+					//Install Intellego on Node 131'
+					node('10.0.158.131') {
+						sh NTPDATE
+						sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+						sh COPY_DATAWIPE_CONF
+						sh INTELLEGOOAMP_START
+						sh CHECKPORTS
+					} //end of node
 
-				//Restart vmc on 132'
-				node('10.0.158.132') {
-					sh CHECKVMC
-				} //node
+					//Restart vmc on 132'
+					node('10.0.158.132') {
+						sh CHECKVMC
+					} //node
+				}
+				catch(err){
+					emailext attachLog: 'true', subject: 'Installing Intellego: Nightly build failed at 131-132 step', to: MAILING_LIST
+					throw err
+				}
 			} // end of timeout block
 		} // end of ONLY_RUN_TESTS block
 
@@ -343,25 +361,31 @@ stage ('Install and Test') {
 	/*
 		if ( ONLY_RUN_TESTS == 'false' ) {
 			timeout(time:1, unit:'HOURS') {
-				//'Install Intellego DPE on Node 147'
-				node('10.0.158.147') {
-					sh NTPDATE
-					sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
-				} //end of node
+				try{
+					//'Install Intellego DPE on Node 147'
+					node('10.0.158.147') {
+						sh NTPDATE
+						sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+					} //end of node
 
-				// Install Intellego on Node 161'
-				node('10.0.158.161') {
-					sh NTPDATE
-					sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
-					sh COPY_DATAWIPE_CONF
-					sh INTELLEGOOAMP_START
-					sh CHECKPORTS
-				} //end of node
+					// Install Intellego on Node 161'
+					node('10.0.158.161') {
+						sh NTPDATE
+						sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+						sh COPY_DATAWIPE_CONF
+						sh INTELLEGOOAMP_START
+						sh CHECKPORTS
+					} //end of node
 
-				//Restart vmc on 147'
-				node('10.0.158.147') {
-					sh CHECKVMC
-				} //node
+					//Restart vmc on 147'
+					node('10.0.158.147') {
+						sh CHECKVMC
+					} //node
+				}
+				catch(err){
+					emailext attachLog: 'true', subject: 'Installing Intellego: Nightly build failed at 147-161 step', to: MAILING_LIST
+					throw err
+				}
 			} //end of timeout block
 		} // End of RUN_ONLY_TESTS block
 
