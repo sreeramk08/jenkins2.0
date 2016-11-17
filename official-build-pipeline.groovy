@@ -11,14 +11,14 @@ def TMPDIR = '/tmp/rest-api-official-logs-' + RESTAPI_BRANCH
 		sh 'mkdir -p ' + TMPDIR
 	}
 
-def first_build_changes(INTELLEGO_VERSION, CURRENT_BUILD_NUMBER){
+def first_build_changes(INTELLEGO_VERSION, VERSION_TO_BUILD){
 		/*
 			A First build can be one that is first in the range. Ex: 6.6.2.3.<1> or a new intellego version. Ex: 6.6 -> 6.7
 			In both cases, we need to get the last tag applied in 6.6. How we determine the 6.6 is different. 
 		*/
 		
 	    def TMPDIR = '/tmp/rest-api-official-logs-' + RESTAPI_BRANCH
-        echo "Determining changes for a first build:" + CURRENT_BUILD_NUMBER
+        echo "Determining changes for a first build:" + VERSION_TO_BUILD
         
 	    //First see if there is already a last build in the intellego version range
 		try {
@@ -36,19 +36,19 @@ def first_build_changes(INTELLEGO_VERSION, CURRENT_BUILD_NUMBER){
 		echo "The last tag obtained was: " + LAST_TAG
         
 		// Now to get the changes into a text file
-        sh 'echo "Changes between: ' + LAST_TAG + ' to ' + CURRENT_BUILD_NUMBER + ' " > Changes.txt '
+        sh 'echo "Changes between: ' + LAST_TAG + ' to ' + VERSION_TO_BUILD + ' " > Changes.txt '
         sh 'echo "-----------------------------------------\n" >> Changes.txt' 
-        sh 'git log --pretty=format:"%s    %an" ' + LAST_TAG + '...' + CURRENT_BUILD_NUMBER + ' >> Changes.txt'
+        sh 'git log --pretty=format:"%s    %an" ' + LAST_TAG + '...' + VERSION_TO_BUILD + ' >> Changes.txt'
         archive 'Changes.txt'
 }
 
-def build_changes(PREV_BUILD_NUMBER, CURRENT_BUILD_NUMBER) {
+def build_changes(PREV_BUILD_NUMBER, VERSION_TO_BUILD) {
     
 	    def TMPDIR = '/tmp/rest-api-official-logs-' + RESTAPI_BRANCH
-        echo "Determining changes between: " + PREV_BUILD_NUMBER + ' to ' + CURRENT_BUILD_NUMBER
-	    sh 'echo "Changes between: ' + PREV_BUILD_NUMBER + ' to ' + CURRENT_BUILD_NUMBER + ' " > Changes.txt '
+        echo "Determining changes between: " + PREV_BUILD_NUMBER + ' to ' + VERSION_TO_BUILD
+	    sh 'echo "Changes between: ' + PREV_BUILD_NUMBER + ' to ' + VERSION_TO_BUILD + ' " > Changes.txt '
         sh 'echo "-----------------------------------------\n" >> Changes.txt' 
-        sh 'git log --pretty=format:"%s    %an" ' + PREV_BUILD_NUMBER + '...' + CURRENT_BUILD_NUMBER + ' >> Changes.txt'
+        sh 'git log --pretty=format:"%s    %an" ' + PREV_BUILD_NUMBER + '...' + VERSION_TO_BUILD + ' >> Changes.txt'
         archive 'Changes.txt'
 }
 
@@ -81,17 +81,7 @@ def run_suite(suite, env) {
 timestamps {
 
 	stage ('Build Intellego binary'){
-
-		/*
-		// "Send an email"
-		node ('master') {
-			mail (to: MAILING_LIST,
-			subject: "Job ${env.JOB_NAME} is running",
-			body: 'Parameters - Code: ' + INTELLEGO_CODE_BRANCH + ' RESTAPI: ' + RESTAPI_BRANCH );
-		}
-		*/
-
-
+		
 	if ( ONLY_RUN_TESTS == 'false' ) {
 
 		// If prebuilt-binary is present, don't build from scratch
@@ -112,18 +102,20 @@ timestamps {
 			node ('intellego-official-build-machine') {
 				// intelbld's home directory
 				ws('/mnt/grandprix/homes/intelbld/git/jenkins/jenkins-official-builds') {
-					//deleteDir()
-					
+					deleteDir()
 					try{
 						// Try to checkout the code
 						echo "Checking out code..."
-						git url: 'ssh://git@10.0.135.6/intellego.git', branch: INTELLEGO_CODE_BRANCH
+						//git url: 'ssh://git@10.0.135.6/intellego.git', branch: INTELLEGO_CODE_BRANCH
+						sh 'umask 0022; git clone ssh://git@10.0.135.6/intellego.git . ' 
 					}
 					catch(err){
 						currentBuild.result = 'FAILURE'
 						emailext body: 'Could not check out code for: ' + INTELLEGO_CODE_BRANCH, subject: 'Official Build failed', to: MAILING_LIST
 						throw err
 					}
+					
+					
 					
 					//Create a new folder for newer releases
 					try{
@@ -137,67 +129,90 @@ timestamps {
 					}
 			
 					// Generate next build number
-					def buildNumber = " "
+					def PrevBuildNumber = " "
 					def SEARCH = INTELLEGO_VERSION + '.' + MINOR_VERSION + '.' + PATCH_VERSION  // search for 6.6.1.0 
 					try{
-						buildNumber = sh(script: "git describe --tags --abbrev=0 --match ${SEARCH}* | rev | cut -d. -f1 | rev", returnStdout: true).trim()
-					    //echo "Got the last build number from search as: " + buildNumber
+						PrevBuildNumber = sh(script: "git describe --tags --abbrev=0 --match ${SEARCH}* | rev | cut -d. -f1 | rev", returnStdout: true).trim()
+					    //echo "Got the last build number from search as: " + PrevBuildNumber
 					}
 					catch(err){
 						// For the very first build, the search will not give anything.  Move on, don't fail the build.
 						currentBuild.result = 'SUCCESS'
 					}
 					
-					// echo "Got the search as: "  + buildNumber
+					echo "Got the search for previous number as: "  + PrevBuildNumber
 
 					def FIRST_BUILD = ""
 					
-					if ( ! buildNumber ) { // very first build
+					if ( ! PrevBuildNumber ) { // very first build
 						echo "First build of its range"
 						NEXT_BUILD_NUMBER = 1
 						FIRST_BUILD = 'yes'
 					}
 					else {
-						echo "Not the very first build" 
+						echo "Not the very first build"
+						buildNumber = sh(script: "echo ${PrevBuildNumber} | sed 's/0*//' ", returnStdout: true).trim()
 						int BN = buildNumber.toInteger()
 					    //echo "The build number is: " + BN
 					    NEXT_BUILD_NUMBER = BN + 1
 					    //echo "The Next build number is: " + NEXT_BUILD_NUMBER
 					}
 	
-					CURRENT_BUILD_NUMBER = INTELLEGO_VERSION + '.' + MINOR_VERSION +'.' + PATCH_VERSION + '.' + NEXT_BUILD_NUMBER
-					currentBuild.displayName = CURRENT_BUILD_NUMBER
+					if ( NEXT_BUILD_NUMBER < 10 ) {
+						// Add two leading zeros to the version
+						VERSION_TO_BUILD = INTELLEGO_VERSION + '.' + MINOR_VERSION +'.' + PATCH_VERSION + '.00' + NEXT_BUILD_NUMBER
+					}
+					else {
+						// Add only one leading zero
+						VERSION_TO_BUILD = INTELLEGO_VERSION + '.' + MINOR_VERSION +'.' + PATCH_VERSION + '.0' + NEXT_BUILD_NUMBER
+					}
+					
+					echo "Current build number is: " + VERSION_TO_BUILD
+					
+					
+					// Set the name of the current build in Jenkins
+					currentBuild.displayName = VERSION_TO_BUILD
 					
 					//Tag Git and Build the binary  
 					try {
-						sh 'git tag -a ' + CURRENT_BUILD_NUMBER + ' -m "Intellego Build No. ' + CURRENT_BUILD_NUMBER + '"'
+						sh 'git tag -a ' + VERSION_TO_BUILD + ' -m "Intellego Build No. ' + VERSION_TO_BUILD + '"'
+						sh 'git push origin ' + VERSION_TO_BUILD
 					}
 					catch(err){
 						// If tagging failed or if the tag already exists, fail the build
 						currentBuild.result = 'FAILURE'
-						emailext body: 'A tag already exists! ' +  CURRENT_BUILD_NUMBER, subject: 'Official build failed!', to: MAILING_LIST
+						emailext body: 'A tag already exists! ' +  VERSION_TO_BUILD, subject: 'Official build failed!', to: MAILING_LIST
 						throw err
 					}
 					
 					//Determine changes depending on if its a first build or not
 					if ( FIRST_BUILD == "yes" ){
-					   first_build_changes(INTELLEGO_VERSION, CURRENT_BUILD_NUMBER) 
+					   first_build_changes(INTELLEGO_VERSION, VERSION_TO_BUILD) 
 					}
 					else {
-					   PREV_BUILD_NUMBER = INTELLEGO_VERSION + '.' + MINOR_VERSION +'.' + PATCH_VERSION + '.' + buildNumber
-					   build_changes(PREV_BUILD_NUMBER, CURRENT_BUILD_NUMBER)
+					   PREV_BUILD_NUMBER = INTELLEGO_VERSION + '.' + MINOR_VERSION +'.' + PATCH_VERSION + '.' + PrevBuildNumber
+					   build_changes(PREV_BUILD_NUMBER, VERSION_TO_BUILD)
 					}
 					
 					// After changes are calculated, we can build the binary now!
 					
 					echo ":::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::"
-					echo "::::::::: BUILDING INTELLEGO OFFICIAL BINARY " + CURRENT_BUILD_NUMBER  + " ::::::::::::"
+					echo "::::::::: BUILDING INTELLEGO OFFICIAL BINARY " + VERSION_TO_BUILD  + " ::::::::::::"
 					echo ":::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::"
-					
-					sh 'cd build_tool; ./build-intellego.sh ' + CURRENT_BUILD_NUMBER  
-					
+				    
+					//sh 'chmod +x 3rd_party/3rdParty_libraries_C/codec/lib/libqmcomfortnois e.so' //forcefully change permissions for this file for now	
+					sh 'cd build_tool; ./build-intellego.sh ' + VERSION_TO_BUILD  
+		
+		
+					// "Send an email"
+					node ('master') {
+						mail (to: MAILING_LIST,
+						subject: 'START. Official Intellego Build:' + VERSION_TO_BUILD + ' SOURCE:' + INTELLEGO_CODE_BRANCH + ' RESTAPI:' + RESTAPI_BRANCH,
+						//body: 'Parameters - Code: ' + INTELLEGO_CODE_BRANCH + ' RESTAPI: ' + RESTAPI_BRANCH );
+						body: 'Console log: ' + env.BUILD_URL)
+					}			
 					// archive the binary to copy to the other nodes
-					def DIR = '/intellego/bin/REL_' + INTELLEGO_VERSION + '/intelbld/' + CURRENT_BUILD_NUMBER
+					def DIR = '/intellego/bin/REL_' + INTELLEGO_VERSION + '/intelbld/' + VERSION_TO_BUILD
 					
 					ws("${DIR}") {
 						archive '*.bin'
@@ -313,7 +328,7 @@ timestamps {
 			sh 'echo "<p>Intellego Source Branch - " ' + INTELLEGO_CODE_BRANCH + ' >> ' + TMPDIR + '/Summary.HTML'
 			sh 'echo "<p>Rest API Branch - " ' + RESTAPI_BRANCH + ' >> ' + TMPDIR + '/Summary.HTML'
 			sh 'echo "<p>Console Output - <a href= "' + env.BUILD_URL + '"consoleFull>"' + env.BUILD_URL + '"consoleFull</a>"' + ' >> ' + TMPDIR + '/Summary.HTML' 
-			//sh 'echo INTELLEGO_BINARY: ' + CURRENT_BUILD_NUMBER + ' >> ' + TMPDIR  + '/Summary.HTML'
+			//sh 'echo INTELLEGO_BINARY: ' + VERSION_TO_BUILD + ' >> ' + TMPDIR  + '/Summary.HTML'
 			sh 'echo "<p>" >> ' + TMPDIR + '/Summary.HTML'
 			sh 'echo "<b>Rest API Test Results:</b>" >> ' + TMPDIR + '/Summary.HTML' 
 
@@ -478,11 +493,12 @@ timestamps {
 				//sh 'echo "\nNo. of TEST SUITES FAILED: " ' + TESTS_FAILED + ' >> ' + TMPDIR + '/Summary.HTML' 
 				try{
 				    unarchive mapping: ['*.txt' : '.']
-					emailext attachmentsPattern: '*.log, *.html, *.txt', mimeType: 'text/html', body: '${FILE,path="' + TMPDIR + '/Summary.HTML"}', subject: 'Official Intellego Build:' + CURRENT_BUILD_NUMBER + ' SOURCE:' + INTELLEGO_CODE_BRANCH + ' RESTAPI:' + RESTAPI_BRANCH, to: MAILING_LIST
-					sh 'zip -j Failed_Test_Results.zip ' + TMPDIR + '/*'
-					archive 'Failed_Test_Results.zip, Summary.HTML, Changes.txt'
+					emailext attachmentsPattern: '*.log, *.html, *.txt', mimeType: 'text/html', body: '${FILE,path="' + TMPDIR + '/Summary.HTML"}', subject: 'END. Official Intellego Build:' + VERSION_TO_BUILD + ' SOURCE:' + INTELLEGO_CODE_BRANCH + ' RESTAPI:' + RESTAPI_BRANCH, to: MAILING_LIST
+					sh 'zip -j All_Test_Results.zip ' + TMPDIR + '/*'
+					archive 'All_Test_Results.zip, Summary.HTML, Changes.txt'
 				}
 				catch(err){
+				    echo "***************** Could not send mail! **************"
 					currentBuild.result = 'SUCCESS'    
 				}
 			} //end of ws block
@@ -491,6 +507,7 @@ timestamps {
 } // End of timestamp block  
 
   
+
 
 
 
