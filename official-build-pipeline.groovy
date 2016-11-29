@@ -36,20 +36,20 @@ def first_build_changes(INTELLEGO_VERSION, VERSION_TO_BUILD){
 		echo "The last tag obtained was: " + LAST_TAG
         
 		// Now to get the changes into a text file
-        sh 'echo "Changes between: ' + LAST_TAG + ' to ' + VERSION_TO_BUILD + ' " > Changes.txt '
-        sh 'echo "-----------------------------------------\n" >> Changes.txt' 
-        sh 'git log --pretty=format:"%s    %an" ' + LAST_TAG + '...' + VERSION_TO_BUILD + ' >> Changes.txt'
-        archive 'Changes.txt'
+        sh 'echo "Changes between: ' + LAST_TAG + ' to ' + VERSION_TO_BUILD + ' " > Changes.log '
+        sh 'echo "-----------------------------------------\n" >> Changes.log' 
+        sh 'git log --pretty=format:"%s    %an" ' + LAST_TAG + '...' + VERSION_TO_BUILD + ' >> Changes.log'
+        archive 'Changes.log'
 }
 
 def build_changes(PREV_BUILD_NUMBER, VERSION_TO_BUILD) {
     
 	    def TMPDIR = '/tmp/rest-api-official-logs-' + RESTAPI_BRANCH
         echo "Determining changes between: " + PREV_BUILD_NUMBER + ' to ' + VERSION_TO_BUILD
-	    sh 'echo "Changes between: ' + PREV_BUILD_NUMBER + ' to ' + VERSION_TO_BUILD + ' " > Changes.txt '
-        sh 'echo "-----------------------------------------\n" >> Changes.txt' 
-        sh 'git log --pretty=format:"%s    %an" ' + PREV_BUILD_NUMBER + '...' + VERSION_TO_BUILD + ' >> Changes.txt'
-        archive 'Changes.txt'
+	    sh 'echo "Changes between: ' + PREV_BUILD_NUMBER + ' to ' + VERSION_TO_BUILD + ' " > Changes.log '
+        sh 'echo "-----------------------------------------\n" >> Changes.log' 
+        sh 'git log --pretty=format:"%s    %an" ' + PREV_BUILD_NUMBER + '...' + VERSION_TO_BUILD + ' >> Changes.log'
+        archive 'Changes.log'
 }
 
 def run_suite(suite, env) {
@@ -81,6 +81,14 @@ def run_suite(suite, env) {
 timestamps {
 
 	stage ('Build Intellego binary'){
+	
+	node {
+		// Handle build naming
+		if ( ONLY_RUN_TESTS == 'true' ){
+			def DIR = PREBUILT_BINARY_PATH
+			currentBuild.displayName = sh(script: "basename ${DIR}", returnStdout: true).trim() + '-TESTS_ONLY'
+		}
+	}
 		
 	if ( ONLY_RUN_TESTS == 'false' ) {
 
@@ -88,6 +96,7 @@ timestamps {
 		if ( PREBUILT_BINARY_PATH ) {
 			echo " ******* Skipping binary building steps ********"
 			def DIR = PREBUILT_BINARY_PATH
+			currentBuild.displayName = sh(script: "basename ${DIR}", returnStdout: true).trim() + '-PREBUILT_BINARY'
 			node ('intellego-official-build-machine') {
 			    
 				ws("${DIR}"){
@@ -101,13 +110,15 @@ timestamps {
 			echo " ******** Building Intellego Binary *********"
 			node ('intellego-official-build-machine') {
 				// intelbld's home directory
-				ws('/mnt/grandprix/homes/intelbld/git/jenkins/jenkins-official-builds') {
+				//ws('/mnt/grandprix/homes/intelbld/git/jenkins/jenkins-official-builds') {
 					deleteDir()
 					try{
 						// Try to checkout the code
 						echo "Checking out code..."
 						//git url: 'ssh://git@10.0.135.6/intellego.git', branch: INTELLEGO_CODE_BRANCH
 						sh 'umask 0022; git clone ssh://git@10.0.135.6/intellego.git . ' 
+						//sh 'umask 0022; git pull '
+						
 					}
 					catch(err){
 						currentBuild.result = 'FAILURE'
@@ -132,8 +143,9 @@ timestamps {
 					def PrevBuildNumber = " "
 					def SEARCH = INTELLEGO_VERSION + '.' + MINOR_VERSION + '.' + PATCH_VERSION  // search for 6.6.1.0 
 					try{
-						PrevBuildNumber = sh(script: "git describe --tags --abbrev=0 --match ${SEARCH}* | rev | cut -d. -f1 | rev", returnStdout: true).trim()
-					    //echo "Got the last build number from search as: " + PrevBuildNumber
+						//PrevBuildNumber = sh(script: "git describe --tags --abbrev=0 --match ${SEARCH}* | rev | cut -d. -f1 | rev", returnStdout: true).trim()
+					    PrevBuildNumber = sh(script: " git tag | grep ${SEARCH}* | tail -1 | rev | cut -d. -f1 | rev", returnStdout: true).trim()
+						//echo "Got the last build number from search as: " + PrevBuildNumber
 					}
 					catch(err){
 						// For the very first build, the search will not give anything.  Move on, don't fail the build.
@@ -190,7 +202,7 @@ timestamps {
 					   first_build_changes(INTELLEGO_VERSION, VERSION_TO_BUILD) 
 					}
 					else {
-					   PREV_BUILD_NUMBER = INTELLEGO_VERSION + '.' + MINOR_VERSION +'.' + PATCH_VERSION + '.' + PrevBuildNumber
+					   PREV_BUILD_NUMBER = INTELLEGO_VERSION + '.' + MINOR_VERSION +'.' + PATCH_VERSION + '.' + PrevBuildNumber // Ex: 6.6.1.0.009
 					   build_changes(PREV_BUILD_NUMBER, VERSION_TO_BUILD)
 					}
 					
@@ -207,7 +219,7 @@ timestamps {
 					// "Send an email"
 					node ('master') {
 						mail (to: MAILING_LIST,
-						subject: 'START. Official Intellego Build:' + VERSION_TO_BUILD + ' SOURCE:' + INTELLEGO_CODE_BRANCH + ' RESTAPI:' + RESTAPI_BRANCH,
+						subject: 'START Official Intellego Build:' + VERSION_TO_BUILD + ' SOURCE: ' + INTELLEGO_CODE_BRANCH + ' RESTAPI:' + RESTAPI_BRANCH,
 						//body: 'Parameters - Code: ' + INTELLEGO_CODE_BRANCH + ' RESTAPI: ' + RESTAPI_BRANCH );
 						body: 'Console log: ' + env.BUILD_URL)
 					}			
@@ -219,7 +231,7 @@ timestamps {
 					}
 					
 					
-				} // end of ws block	
+				//} // end of ws block	
 			}// node
 		} // end of else block
 	} // end of ONLY_RUN_TESTS 
@@ -233,18 +245,30 @@ timestamps {
   
 			parallel 'Node 131': {
 				node('10.0.158.131') {
+					def exists = fileExists '*.bin'
+					if (exists) {
+						sh 'sudo rm *.bin'
+					}
 					unarchive mapping: ['*.bin' : '.']
 					sh COPY_BINARY
 				} //end of node
 			}, // end of 131
 			'Node 132': {
 				node('10.0.158.132') {
+					def exists = fileExists '*.bin'
+					if (exists) {
+						sh 'sudo rm *.bin'
+					}
 					unarchive mapping: ['*.bin' : '.']
 					sh COPY_BINARY
 				} //end of node
 			}, // end of 132
 			'Node 134': {
 				node('10.0.158.134') {
+					def exists = fileExists '*.bin'
+					if (exists) {
+						sh 'sudo rm *.bin'
+					}
 					unarchive mapping: ['*.bin' : '.']
 					sh COPY_BINARY
 				} //end of node
@@ -252,6 +276,10 @@ timestamps {
 			
 			//'Node 147': {
 			//	node('10.0.158.147') {
+			//		def exists = fileExists '*.bin'
+			//		if (exists) {
+			//			sh 'sudo rm *.bin'
+			//		}
 			//		unarchive mapping: ['*.bin' : '.']
 			//		sh COPY_BINARY
 			//	} //end of node
@@ -259,12 +287,20 @@ timestamps {
 			
 			'Node 148': {
 				node('10.0.158.148') {
+					def exists = fileExists '*.bin'
+					if (exists) {
+						sh 'sudo rm *.bin'
+					}
 					unarchive mapping: ['*.bin' : '.']
 					sh COPY_BINARY
 				} //end of node
 			}, // end of 148
 			'Node 151': {
 				node('10.0.158.151') {
+					def exists = fileExists '*.bin'
+					if (exists) {
+						sh 'sudo rm *.bin'
+					}
 					unarchive mapping: ['*.bin' : '.']
 					sh COPY_BINARY
 				} //end of node
@@ -272,6 +308,10 @@ timestamps {
 			
 			//'Node 161': {
 			//	node('10.0.158.161') {
+			//		def exists = fileExists '*.bin'
+			//		if (exists) {
+			//			sh 'sudo rm *.bin'
+			//		}
 			//		unarchive mapping: ['*.bin' : '.']
             //sh COPY_BINARY
 			//	} //end of node
@@ -279,6 +319,10 @@ timestamps {
 			
 			'Node 152': {
 				node('10.0.158.152') {
+					def exists = fileExists '*.bin'
+					if (exists) {
+						sh 'sudo rm *.bin'
+					}
 					unarchive mapping: ['*.bin' : '.']
 					sh COPY_BINARY
 				} //end of node
@@ -298,30 +342,38 @@ timestamps {
 	parallel '134-148': {
         
 		if ( ONLY_RUN_TESTS == 'false' ) {
-			//Install Intellego DPE on Node 134
-			node('10.0.158.134') {
-				sh NTPDATE
-				sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
-			}
-			// Install intellego on 148
-			node('10.0.158.148') {
-				sh NTPDATE
-				sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
-				sh COPY_DATAWIPE_CONF
-				sh INTELLEGOOAMP_START
-				sh CHECKPORTS
-			}
-			//Restart vmc on 134
-			node('10.0.158.134') {
-				sh CHECKVMC
+			timeout(time:1, unit:'HOURS') {
+				try {
+					//Install Intellego DPE on Node 134
+					node('10.0.158.134') {
+						sh NTPDATE
+						sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+					}
+					// Install intellego on 148
+					node('10.0.158.148') {
+						sh NTPDATE
+						sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+						sh COPY_DATAWIPE_CONF
+						sh INTELLEGOOAMP_START
+						sh CHECKPORTS
+					}
+					//Restart vmc on 134
+					node('10.0.158.134') {
+						sh CHECKVMC
+					}
+				}
+				catch(err){
+					emailext attachLog: 'true', subject: 'Installing Intellego: Official build failed at 134-148 step', to: MAILING_LIST
+					throw err
+				}
 			}
 		} // end of if ONLY_RUN_TESTS
         
 		//REST API Tests
 		node('jenkins-slave') {
-			//deleteDir()
+			deleteDir()
 			// Checkout the rest-api code
-			//git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
+			git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
       
 			// Capture all details in Summary.HTML before running all tests
 			sh 'echo "<b>Build Details:</b>" > ' + TMPDIR + '/Summary.HTML'
@@ -352,31 +404,39 @@ timestamps {
         
 		// Install Intellego DPE on Node 152'
 		if ( ONLY_RUN_TESTS == 'false' ) {
-			node('10.0.158.152') {
-			sh NTPDATE
-			sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
-			} //end of node
+			timeout(time:1, unit:'HOURS') {
+				try {
+					node('10.0.158.152') {
+						sh NTPDATE
+						sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+					} //end of node
   
-			// Install Intellego on Node 151'
-			node('10.0.158.151') {
-				sh NTPDATE
-				sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
-				sh COPY_DATAWIPE_CONF
-				sh INTELLEGOOAMP_START
-				sh CHECKPORTS
-			} //end of node
+					// Install Intellego on Node 151'
+					node('10.0.158.151') {
+						sh NTPDATE
+						sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+						sh COPY_DATAWIPE_CONF
+						sh INTELLEGOOAMP_START
+						sh CHECKPORTS
+					} //end of node
   
-			//Restart vmc on 152'
-			node('10.0.158.152') {
-				sh CHECKVMC
+					//Restart vmc on 152'
+					node('10.0.158.152') {
+						sh CHECKVMC
+					}
+				}
+				catch(err){
+					emailext attachLog: 'true', subject: 'Installing Intellego: Official build failed at 151-152 step', to: MAILING_LIST
+					throw err
+				}
 			}
 		} // end of ONLY_RUN_TESTS block
         
 		//REST API Tests'
 		node('jenkins-slave') {
-			//deleteDir()
-			//git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
-
+			deleteDir()
+			git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
+			
 			if ( run_level3 == 'true' ) {
 				run_suite ( 'level3_tests', 'qa-at-158-151.yaml' )
 			} 
@@ -401,32 +461,40 @@ timestamps {
 	'131-132': {
         
 		if ( ONLY_RUN_TESTS == 'false' ) {
-			//'Install Intellego DPE on Node 132'
-			node('10.0.158.132') {
-				sh NTPDATE
-				sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
-			} //end of node
+			timeout(time:1, unit:'HOURS') {
+				try {
+					//'Install Intellego DPE on Node 132'
+					node('10.0.158.132') {
+						sh NTPDATE
+						sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+					} //end of node
   
-			//Install Intellego on Node 131'
-			node('10.0.158.131') {
-				sh NTPDATE
-				sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
-				sh COPY_DATAWIPE_CONF
-				sh INTELLEGOOAMP_START
-				sh CHECKPORTS
-			} //end of node
+					//Install Intellego on Node 131'
+					node('10.0.158.131') {
+						sh NTPDATE
+						sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+						sh COPY_DATAWIPE_CONF
+						sh INTELLEGOOAMP_START
+						sh CHECKPORTS
+					} //end of node
   
-			//Restart vmc on 132'
-			node('10.0.158.132') {
-				sh CHECKVMC
-			} //node
+					//Restart vmc on 132'
+					node('10.0.158.132') {
+						sh CHECKVMC
+					} //node
+				}
+				catch(err){
+					emailext attachLog: 'true', subject: 'Installing Intellego: Official build failed at 131-132 step', to: MAILING_LIST
+					throw err
+				}
+			} // end of timeout block
 		} // end of ONLY_RUN_TESTS block
         
 
 		//REST API Reporting + DataWipe + IO Workflow'
 		node('jenkins-slave') {
-			//deleteDir()
-			//git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
+			deleteDir()
+			git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
 
 			if ( run_reporting == 'true' ) {
 				run_suite ( 'reporting_tests', 'qa-at-158-131.yaml' )
@@ -451,25 +519,33 @@ timestamps {
 	'147-161': {
         /*
 		if ( ONLY_RUN_TESTS == 'false' ) {
-			//'Install Intellego DPE on Node 147'
-			node('10.0.158.147') {
-				sh NTPDATE
-				sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
-			} //end of node
+			timeout(time:1, unit:'HOURS') {
+				try{
+					//'Install Intellego DPE on Node 147'
+					node('10.0.158.147') {
+						sh NTPDATE
+						sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+					} //end of node
   
-			// Install Intellego on Node 161'
-			node('10.0.158.161') {
-				sh NTPDATE
-				sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
-				sh COPY_DATAWIPE_CONF
-				sh INTELLEGOOAMP_START
-				sh CHECKPORTS
-			} //end of node
+					// Install Intellego on Node 161'
+					node('10.0.158.161') {
+						sh NTPDATE
+						sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
+						sh COPY_DATAWIPE_CONF
+						sh INTELLEGOOAMP_START
+						sh CHECKPORTS
+					} //end of node
   
-			//Restart vmc on 147'
-			node('10.0.158.147') {
-				sh CHECKVMC
-			} //node
+					//Restart vmc on 147'
+					node('10.0.158.147') {
+						sh CHECKVMC
+					} //node
+				}
+				catch(err){
+					emailext attachLog: 'true', subject: 'Installing Intellego: Official build failed at 147-161 step', to: MAILING_LIST
+					throw err
+				}
+			} //end of timeout block
 		} // End of RUN_ONLY_TESTS block
  
 		//REST API v2 regression and Telephony'
@@ -492,10 +568,18 @@ timestamps {
 				echo "**************** Sending logs from here ********************"
 				//sh 'echo "\nNo. of TEST SUITES FAILED: " ' + TESTS_FAILED + ' >> ' + TMPDIR + '/Summary.HTML' 
 				try{
-				    unarchive mapping: ['*.txt' : '.']
-					emailext attachmentsPattern: '*.log, *.html, *.txt', mimeType: 'text/html', body: '${FILE,path="' + TMPDIR + '/Summary.HTML"}', subject: 'END. Official Intellego Build:' + VERSION_TO_BUILD + ' SOURCE:' + INTELLEGO_CODE_BRANCH + ' RESTAPI:' + RESTAPI_BRANCH, to: MAILING_LIST
+					if ( PREBUILT_BINARY_PATH ) { 
+						def DIR = PREBUILT_BINARY_PATH
+						VERSION_TO_BUILD = sh(script: "basename ${DIR}", returnStdout: true).trim()
+					}
+					else {
+						unarchive mapping: ['*.log' : '.']
+					}
+				
+					emailext attachmentsPattern: '*.log, *.html', mimeType: 'text/html', body: '${FILE,path="' + TMPDIR + '/Summary.HTML"}', subject: 'END Official Coded Pipeline Build: ' + VERSION_TO_BUILD + ' SOURCE - ' + INTELLEGO_CODE_BRANCH + ' RESTAPI - ' + RESTAPI_BRANCH, to: MAILING_LIST
 					sh 'zip -j All_Test_Results.zip ' + TMPDIR + '/*'
-					archive 'All_Test_Results.zip, Summary.HTML, Changes.txt'
+					archive 'All_Test_Results.zip, Summary.HTML, Changes.log'
+					
 				}
 				catch(err){
 				    echo "***************** Could not send mail! **************"
