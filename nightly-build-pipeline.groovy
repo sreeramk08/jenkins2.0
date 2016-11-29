@@ -117,18 +117,30 @@ stage ('Copy Binary to Nodes'){
 
 		parallel 'Node 131': {
 			node('10.0.158.131') {
+				def exists = fileExists '*.bin'
+				if (exists) {
+					sh 'sudo rm *.bin'
+				}
 				unarchive mapping: ['*.bin' : '.']
 				sh COPY_BINARY
 			} //end of node
 		}, // end of 131
 		'Node 132': {
 			node('10.0.158.132') {
+				def exists = fileExists '*.bin'
+				if (exists) {
+					sh 'sudo rm *.bin'
+				}
 				unarchive mapping: ['*.bin' : '.']
 				sh COPY_BINARY
 			} //end of node
 		}, // end of 132
 		'Node 134': {
 			node('10.0.158.134') {
+				def exists = fileExists '*.bin'
+				if (exists) {
+					sh 'sudo rm *.bin'
+				}
 				unarchive mapping: ['*.bin' : '.']
 				sh COPY_BINARY
 			} //end of node
@@ -136,6 +148,10 @@ stage ('Copy Binary to Nodes'){
 		/*
 		'Node 147': {
 			node('10.0.158.147') {
+				def exists = fileExists '*.bin'
+				if (exists) {
+					sh 'sudo rm *.bin'
+				}
 				unarchive mapping: ['*.bin' : '.']
 				sh COPY_BINARY
 			} //end of node
@@ -143,12 +159,20 @@ stage ('Copy Binary to Nodes'){
 		*/
 		'Node 148': {
 			node('10.0.158.148') {
+				def exists = fileExists '*.bin'
+				if (exists) {
+					sh 'sudo rm *.bin'
+				}
 				unarchive mapping: ['*.bin' : '.']
 				sh COPY_BINARY
 			} //end of node
 		}, // end of 148
 		'Node 151': {
 			node('10.0.158.151') {
+				def exists = fileExists '*.bin'
+				if (exists) {
+					sh 'sudo rm *.bin'
+				}
 				unarchive mapping: ['*.bin' : '.']
 				sh COPY_BINARY
 			} //end of node
@@ -156,6 +180,10 @@ stage ('Copy Binary to Nodes'){
 		/*
 		'Node 161': {
 			node('10.0.158.161') {
+				def exists = fileExists '*.bin'
+				if (exists) {
+					sh 'sudo rm *.bin'
+				}
 				unarchive mapping: ['*.bin' : '.']
 				sh COPY_BINARY
 			} //end of node
@@ -163,6 +191,10 @@ stage ('Copy Binary to Nodes'){
 		*/
 		'Node 152': {
 			node('10.0.158.152') {
+				def exists = fileExists '*.bin'
+				if (exists) {
+					sh 'sudo rm *.bin'
+				}
 				unarchive mapping: ['*.bin' : '.']
 				sh COPY_BINARY
 			} //end of node
@@ -421,7 +453,11 @@ stage ('Reporting') {
 				currentBuild.result = 'SUCCESS'
 			}
 		} //end of ws block
+		
 	} //end of node block
+	
 } //end of stage
+
 } // End of timestamp block
+
 
