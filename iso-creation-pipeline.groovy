@@ -5,18 +5,25 @@ def update_rhel7_repo() {
 	ws('/home/iso-build-user/scripts'){
 		// Try to register with redhat first
 		try { 
-			sh 'sudo  ./subscribe.sh'
+			sh 'sudo  ./unregister.sh' //force unregister first
+			sh 'sudo  ./subscribe.sh | tee /tmp/aa '  // then try to subscribe
+			//ERROR = sh(script: "grep 'No subscriptions are available' /tmp/aa ; echo \$?", returnStdout: true).trim()
+			//if ( ERROR == '0' ) {
+			//	currentBuild.result = 'FAILURE'
+			//	emailext body: 'Reposync for RHEL-7 failed', attachLog: true, subject: 'No Subscritptions are available', to: MAILING_LIST
+			//	throw err
+			//}
 		}
 		catch(err){ // If registration failed, unregister and re-register
-			sh 'sudo  ./unregister.sh'
-			sh 'sudo  ./subscribe.sh'
+			
+			emailext body: 'Reposync for RHEL-7 failed ', attachLog: true, subject: 'Reposync for RHEL-7 failed during subscription', to: MAILING_LIST
 		}
 		// Try to sync
 		try { // sync repo
 			sh 'sudo ./repo_sync.sh'
 		}
 		catch (err) {
-			currentBuildResult = 'FAILURE'
+			currentBuild.result = 'FAILURE'
 			sh 'sudo  ./unregister.sh' // unregister before exiting
 			sh 'sudo ./unregister.sh'
 			emailext body: 'Reposync for RHEL-7 failed ', attachLog: true, subject: 'Reposync for RHEL-7 failed', to: MAILING_LIST
@@ -43,7 +50,7 @@ def update_rhel6_repo() {
 		sh 'sudo  /home/victorhugo/repos/repoSync-NG.sh'
     }
     catch (err) {
-		currentBuildResult = 'FAILURE'
+		currentBuild.result = 'FAILURE'
         sh 'sudo /home/victorhugo/repos/unregister.sh' // unregister before exiting
         emailext body: 'Reposync for RHEL-6 failed ', attachLog: true, subject: 'Reposync for RHEL-6 failed', to: MAILING_LIST
 		throw err
