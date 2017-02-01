@@ -190,13 +190,7 @@ stage ('Install and Test') {
 					run_suite ( 'rtf_all', 'qa-at-158-151.yaml' )
 				}
 
-				if ( run_regression == 'true' ) {
-					run_suite ( 'regression_tests', 'qa-at-158-151.yaml' )
-				}
-			
-				if ( run_level2== 'true' ) {
-					run_suite ( 'level2_tests', 'qa-at-158-151.yaml' )
-				}
+
 				
 
 			} // End of node jenkins-slave block
@@ -229,7 +223,14 @@ stage ('Install and Test') {
 				if ( run_kddi== 'true' ) {
 					run_suite ( 'kddi_tests', 'qa-at-158-151.yaml' )
 				}
-
+				
+				if ( run_regression == 'true' ) {
+					run_suite ( 'regression_tests', 'qa-at-158-151.yaml' )
+				}
+			
+				if ( run_level2== 'true' ) {
+					run_suite ( 'level2_tests', 'qa-at-158-151.yaml' )
+				}
 			}//node
 		}
 	}, //151-152
