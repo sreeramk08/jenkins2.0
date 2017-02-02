@@ -20,7 +20,7 @@ def run_scan(target){
 		deleteDir()
         git url: 'git@bitbucket.org:ss8/scripts.git', branch: 'master'
 		sh 'chmod +x nessus/custom-scan.sh; nessus/custom-scan.sh ' + target
-		//archive '*.txt, *.html'
+		archive '*.txt, *.html'
 		stash name: target, includes: "*.txt, *.html"
 	}
 }
