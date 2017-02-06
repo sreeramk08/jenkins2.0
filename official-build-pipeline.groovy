@@ -96,9 +96,9 @@ timestamps {
 		if ( PREBUILT_BINARY_PATH ) {
 			echo " ******* Skipping binary building steps ********"
 			def DIR = PREBUILT_BINARY_PATH
-			currentBuild.displayName = sh(script: "basename ${DIR}", returnStdout: true).trim() + '-PREBUILT_BINARY'
+			
 			node ('intellego-official-build-machine') {
-			    
+			    currentBuild.displayName = sh(script: "basename ${DIR}", returnStdout: true).trim() + '-PREBUILT_BINARY'
 				ws("${DIR}"){
 					archive '*.bin'
 				}
@@ -115,10 +115,7 @@ timestamps {
 					try{
 						// Try to checkout the code
 						echo "Checking out code..."
-						//git url: 'ssh://git@10.0.135.6/intellego.git', branch: INTELLEGO_CODE_BRANCH
 						sh 'umask 0022; git clone ssh://git@10.0.135.6/intellego.git . ' 
-						//sh 'umask 0022; git pull '
-						
 					}
 					catch(err){
 						currentBuild.result = 'FAILURE'
@@ -213,7 +210,7 @@ timestamps {
 					echo ":::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::"
 				    
 					//sh 'chmod +x 3rd_party/3rdParty_libraries_C/codec/lib/libqmcomfortnois e.so' //forcefully change permissions for this file for now	
-					sh 'cd build_tool; ./build-intellego.sh ' + VERSION_TO_BUILD  
+					sh 'umask 0022; cd build_tool; ./build-intellego.sh ' + VERSION_TO_BUILD  
 		
 		
 					// "Send an email"
@@ -247,7 +244,7 @@ timestamps {
 				node('10.0.158.131') {
 					def exists = fileExists '*.bin'
 					if (exists) {
-						sh 'sudo rm *.bin'
+						sh 'sudo rm -f *.bin'
 					}
 					unarchive mapping: ['*.bin' : '.']
 					sh COPY_BINARY
@@ -257,7 +254,7 @@ timestamps {
 				node('10.0.158.132') {
 					def exists = fileExists '*.bin'
 					if (exists) {
-						sh 'sudo rm *.bin'
+						sh 'sudo rm -f *.bin'
 					}
 					unarchive mapping: ['*.bin' : '.']
 					sh COPY_BINARY
@@ -267,7 +264,7 @@ timestamps {
 				node('10.0.158.134') {
 					def exists = fileExists '*.bin'
 					if (exists) {
-						sh 'sudo rm *.bin'
+						sh 'sudo rm -f *.bin'
 					}
 					unarchive mapping: ['*.bin' : '.']
 					sh COPY_BINARY
@@ -278,7 +275,7 @@ timestamps {
 			//	node('10.0.158.147') {
 			//		def exists = fileExists '*.bin'
 			//		if (exists) {
-			//			sh 'sudo rm *.bin'
+			//			sh 'sudo rm -f *.bin'
 			//		}
 			//		unarchive mapping: ['*.bin' : '.']
 			//		sh COPY_BINARY
@@ -289,7 +286,7 @@ timestamps {
 				node('10.0.158.148') {
 					def exists = fileExists '*.bin'
 					if (exists) {
-						sh 'sudo rm *.bin'
+						sh 'sudo rm -f *.bin'
 					}
 					unarchive mapping: ['*.bin' : '.']
 					sh COPY_BINARY
@@ -299,7 +296,7 @@ timestamps {
 				node('10.0.158.151') {
 					def exists = fileExists '*.bin'
 					if (exists) {
-						sh 'sudo rm *.bin'
+						sh 'sudo rm -f *.bin'
 					}
 					unarchive mapping: ['*.bin' : '.']
 					sh COPY_BINARY
@@ -310,7 +307,7 @@ timestamps {
 			//	node('10.0.158.161') {
 			//		def exists = fileExists '*.bin'
 			//		if (exists) {
-			//			sh 'sudo rm *.bin'
+			//			sh 'sudo rm -f *.bin'
 			//		}
 			//		unarchive mapping: ['*.bin' : '.']
             //sh COPY_BINARY
@@ -321,7 +318,7 @@ timestamps {
 				node('10.0.158.152') {
 					def exists = fileExists '*.bin'
 					if (exists) {
-						sh 'sudo rm *.bin'
+						sh 'sudo rm -f *.bin'
 					}
 					unarchive mapping: ['*.bin' : '.']
 					sh COPY_BINARY
@@ -389,13 +386,7 @@ timestamps {
 				run_suite ( 'level1_tests', 'qa-at-158-148.yaml' )
 			} 
       
-			if ( run_level2== 'true' ) {
-				run_suite ( 'level2_tests', 'qa-at-158-148.yaml' )
-			} 
 
-			if ( run_kddi== 'true' ) {
-				run_suite ( 'kddi_tests', 'qa-at-158-148.yaml' )
-			} 
 		} // End of node jenkins-slave block
 
 	}, // end of 134-148 block
@@ -453,6 +444,13 @@ timestamps {
 				run_suite ( 'regression_tests', 'qa-at-158-151.yaml' )
 			} 
       
+      			if ( run_level2== 'true' ) {
+				run_suite ( 'level2_tests', 'qa-at-158-151.yaml' )
+			} 
+
+			if ( run_kddi== 'true' ) {
+				run_suite ( 'kddi_tests', 'qa-at-158-151.yaml' )
+			} 
 		}//node
 
 
@@ -591,6 +589,7 @@ timestamps {
 } // End of timestamp block  
 
   
+
 
 
 
