@@ -42,18 +42,29 @@ def email_send(PROJECT, VERSION) {
 	if (PROJECT == 'intellego') {
 	
 		MAILING_LIST = 'skrishna@ss8.com'
-		//unstash "email-file"
-		//emailext body: 'URL for SPL: http://10.0.135.251/releases/' + PROJECT + '/' + VERSION, subject: 'A new SPL for ' + PROJECT + ' is available', to: MAILING_LIST
 		emailext mimeType: 'text/html', body: '${FILE,path="/tmp/final-email-${PROJECT}-${VERSION}.html"}', subject: 'A new SPL for ' + PROJECT + ' is available', to: MAILING_LIST
 
 	}
 	else if (PROJECT == 'sensor'){
 	
 		MAILING_LIST = 'skrishna@ss8.com'
-		//emailext body: 'URL for SPL: http://10.0.135.251/releases/' + PROJECT + '/' + VERSION, subject: 'A new SPL for ' + PROJECT + ' is available', to: MAILING_LIST
 		emailext mimeType: 'text/html', body: '${FILE,path="/tmp/final-email-${PROJECT}-${VERSION}.html"}', subject: 'A new SPL for ' + PROJECT + ' is available', to: MAILING_LIST
 		
 	}
+	
+	else if (PROJECT == 'discovery'){
+	
+		MAILING_LIST = 'skrishna@ss8.com'
+		emailext mimeType: 'text/html', body: '${FILE,path="/tmp/final-email-${PROJECT}-${VERSION}.html"}', subject: 'A new SPL for ' + PROJECT + ' is available', to: MAILING_LIST
+		
+	}
+	else if (PROJECT == 'security-analytics'){
+	
+		MAILING_LIST = 'skrishna@ss8.com'
+		emailext mimeType: 'text/html', body: '${FILE,path="/tmp/final-email-${PROJECT}-${VERSION}.html"}', subject: 'A new SPL for ' + PROJECT + ' is available', to: MAILING_LIST
+		
+	}
+	
 }
 
 
@@ -64,7 +75,7 @@ def copy_nessus_result(PROJECT, VERSION){
 				projectName: 'nessus-scan-pipeline',
 				filter: 'nessus-scan-10.0.165.2.html']);
 		
-		sh (script: "mv nessus-scan-10.0.165.2.html ${PROJECT}-spl-${VERSION}.html; scp *.html root@10.0.135.251:/var/www/html/releases/${PROJECT}/${VERSION}", returnStdout: true)
+		sh (script: "mv nessus-scan-10.0.165.2.html ${PROJECT}-spl-${VERSION}.html; scp *.html root@10.0.135.251:/var/www/html/releases/${PROJECT}/${PLATFORM}-${VERSION}", returnStdout: true)
 	
 }
 

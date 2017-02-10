@@ -35,20 +35,21 @@ stage ('Build ISO') {
 					def exists = sh(script: "ls dist/*.iso ", returnStdout:true)
 					echo "Got exists as: " + exists
 								
-					// Iso creation was successful
+				// 	Iso creation was successful
 					if (exists) {
 					    echo "Copying to ISO Datastore"
 						echo "ISO's are available! Renaming them..."
 						def ISO = sh(script:"cd dist; ls *.iso | grep -v upgrade", returnStdout: true).trim()
 						sh 'sudo mv dist/' + ISO + ' dist/' + PROJECT + '-spl-testing-' + VERSION + '.iso'
+					//	Only Intellego has an upgrade ISO
 						if ( PROJECT == 'intellego') {
 							def UP_ISO = sh(script:"cd dist; ls *.iso | grep upgrade", returnStdout: true).trim()
-							sh 'sudo mv dist/' + UP_ISO + ' dist/' + PROJECT + '-spl-testing-rhel7-' + VERSION + '-upgrade.iso'
+							sh 'sudo mv dist/' + UP_ISO + ' dist/' + PROJECT + '-spl-testing-' + VERSION + '-upgrade.iso'
 						}
 						echo "Copying to ISO Datastore"
 						sh 'scp dist/*.iso isoadmin@10.0.155.54:/ISOFolder/SPL'
 						
-						// Test the SPL created
+					// 	Test the SPL created
 						build job: '2-Test-SPL', parameters: [[$class: 'StringParameterValue', name: 'CONFIG', value: PROJECT + '-spl'], \
 						           [$class: 'StringParameterValue', name: 'SPL_VERSION', value: VERSION ], \
 								   [$class: 'StringParameterValue', name: 'PLATFORM', value: PLATFORM ], \

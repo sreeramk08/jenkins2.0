@@ -27,6 +27,9 @@ stage ('Creating VM') {
 			else {
 			    OS_TYPE = "rhel7_64Guest"
 			}
+			
+			remove_vms (host, WS)
+			
 			create_vms(host, WS, OS_TYPE, SPL_VERSION)
 				
 			// Networking
@@ -51,7 +54,7 @@ stage ('Nessus Scan'){
 				// Determine which vm to remove
 				def host = sh(script: "ansible -i ansible/ansible_hosts ${CONFIG} --list-hosts  | grep -v hosts | sed -e 's/^[[:space:]]*//' | tr '\n' ' ' ", returnStdout: true).trim()
 				// Cleanup after nessus scan
-				remove_vms (host, WS)
+				//remove_vms (host, WS)
 			}
 	}			
 }
@@ -65,12 +68,12 @@ timeout(time: 2, unit: 'DAYS'){
     
 		mail (to: MAILING_LIST,
 			//subject: "Job '${env.JOB_NAME}' (${env.BUILD_NUMBER}) is waiting for input",
-			subject: "Job '${env.JOB_NAME}' is waiting for promotion.",
+			subject: "${CONFIG} is waiting for promotion.",
 			body: "Promotion Decision link:  ${env.BUILD_URL}/input");
 		input 'Promote the ISO?';
 		
 		// Promote the SPL created
-		PROJECT = sh( script: "echo ${CONFIG} | awk -F- '{print \$1}'", returnStdout: true).trim()
+		PROJECT = sh( script: "echo ${CONFIG} | awk -F'-spl' '{print \$1}'", returnStdout: true).trim()
 		
 		build job: '3-Promote-SPL', parameters: [[$class: 'StringParameterValue', name: 'PROJECT', value: PROJECT ], \
 		           [$class: 'StringParameterValue', name: 'VERSION', value: SPL_VERSION ],\
