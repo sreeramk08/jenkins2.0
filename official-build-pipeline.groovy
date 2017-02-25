@@ -3,6 +3,10 @@
 */
 
 def TESTS_FAILED = '0'
+// Force setting this option to false since by the time a request for a retest is made, a nightly build has already been
+// deployed on the vm's used for testing.
+
+def ONLY_RUN_TESTS = 'false'
 def TMPDIR = '/tmp/rest-api-official-logs-' + RESTAPI_BRANCH
 
 	//Create a temp directory for REST API results
@@ -82,14 +86,6 @@ timestamps {
 
 	stage ('Build Intellego binary'){
 	
-	node {
-		// Handle build naming
-		if ( ONLY_RUN_TESTS == 'true' ){
-			def DIR = PREBUILT_BINARY_PATH
-			currentBuild.displayName = sh(script: "basename ${DIR}", returnStdout: true).trim() + '-TESTS_ONLY'
-		}
-	}
-		
 	if ( ONLY_RUN_TESTS == 'false' ) {
 
 		// If prebuilt-binary is present, don't build from scratch
@@ -115,7 +111,7 @@ timestamps {
 					try{
 						// Try to checkout the code
 						echo "Checking out code..."
-						sh 'umask 0022; git clone ssh://git@10.0.135.6/intellego.git . ' 
+						sh 'umask 0022; git clone ssh://git@10.0.135.6/intellego.git . ; git checkout ' +  INTELLEGO_CODE_BRANCH
 					}
 					catch(err){
 						currentBuild.result = 'FAILURE'
@@ -260,8 +256,8 @@ timestamps {
 					sh COPY_BINARY
 				} //end of node
 			}, // end of 132
-			'Node 134': {
-				node('10.0.158.134') {
+			'Node 133': {
+				node('10.0.158.133') {
 					def exists = fileExists '*.bin'
 					if (exists) {
 						sh 'sudo rm -f *.bin'
@@ -269,7 +265,7 @@ timestamps {
 					unarchive mapping: ['*.bin' : '.']
 					sh COPY_BINARY
 				} //end of node
-			}, // end of 134
+			}, // end of 133
 			
 			//'Node 147': {
 			//	node('10.0.158.147') {
@@ -282,8 +278,8 @@ timestamps {
 			//	} //end of node
 			//}, // end of 147
 			
-			'Node 148': {
-				node('10.0.158.148') {
+			'Node 149': {
+				node('10.0.158.149') {
 					def exists = fileExists '*.bin'
 					if (exists) {
 						sh 'sudo rm -f *.bin'
@@ -291,7 +287,7 @@ timestamps {
 					unarchive mapping: ['*.bin' : '.']
 					sh COPY_BINARY
 				} //end of node
-			}, // end of 148
+			}, // end of 149
 			'Node 151': {
 				node('10.0.158.151') {
 					def exists = fileExists '*.bin'
@@ -336,18 +332,18 @@ timestamps {
 		def CHECKPORTS = 'sudo -u root -i /home/support/checkPorts.sh'
 		def CHECKVMC = 'sudo -u root -i /home/support/checkVMC.sh'
     
-	parallel '134-148': {
+	parallel '133-149': {
         
 		if ( ONLY_RUN_TESTS == 'false' ) {
 			timeout(time:1, unit:'HOURS') {
 				try {
 					//Install Intellego DPE on Node 134
-					node('10.0.158.134') {
+					node('10.0.158.133') {
 						sh NTPDATE
 						sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
 					}
 					// Install intellego on 148
-					node('10.0.158.148') {
+					node('10.0.158.149') {
 						sh NTPDATE
 						sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
 						sh COPY_DATAWIPE_CONF
@@ -355,7 +351,7 @@ timestamps {
 						sh CHECKPORTS
 					}
 					//Restart vmc on 134
-					node('10.0.158.134') {
+					node('10.0.158.133') {
 						sh CHECKVMC
 					}
 				}
@@ -383,13 +379,20 @@ timestamps {
 
       
 			if ( run_level1 == 'true' ) {
-				run_suite ( 'level1_tests', 'qa-at-158-148.yaml' )
+				run_suite ( 'level1_tests', 'qa-at-158-149.yaml' )
+			} 
+        
+			if ( run_regression == 'true' ) {
+				run_suite ( 'regression_tests', 'qa-at-158-149.yaml' )
 			} 
       
+      			if ( run_level2== 'true' ) {
+				run_suite ( 'level2_tests', 'qa-at-158-149.yaml' )
+			}     
 
 		} // End of node jenkins-slave block
 
-	}, // end of 134-148 block
+	}, // end of 133-149 block
 
 	'151-152': {
         
@@ -438,14 +441,6 @@ timestamps {
 
 			if ( run_rtf == 'true' ) {
 				run_suite ( 'rtf_all', 'qa-at-158-151.yaml' )
-			} 
-      
-			if ( run_regression == 'true' ) {
-				run_suite ( 'regression_tests', 'qa-at-158-151.yaml' )
-			} 
-      
-      			if ( run_level2== 'true' ) {
-				run_suite ( 'level2_tests', 'qa-at-158-151.yaml' )
 			} 
 
 			if ( run_kddi== 'true' ) {
