@@ -1,62 +1,218 @@
 /*
-   FLEXIBLE pipeline code will build a Intellego binary, install on servers and run tests
+                FLEXIBLE pipeline code will build a Intellego binary, install on servers and run tests
 */
 
-currentBuild.displayName = INTELLEGO_VERSION + ' Build. SRC:' + INTELLEGO_CODE_BRANCH + ' REST:' + RESTAPI_BRANCH + ' No:' + env.BUILD_NUMBER
+//	Set the name of the Jenkins build
+currentBuild.displayName = 'No:' + env.BUILD_NUMBER + ' VER:' +INTELLEGO_VERSION + ' SRC:' + INTELLEGO_CODE_BRANCH + ' REST:' + RESTAPI_BRANCH 
 
-def TESTS_FAILED = '0'
-
-
-
-
-//////////////////
-//				//
-//    START 	//
-//				//
-//////////////////
+def IP_ADDRESSES = ""
+def TEST_SUITES = ""
+def ALL_LOGS_DIR = ""
+def FAILED_LOGS_DIR = ""
 
 
-timestamps {
+//	Start 
+try {
+	timestamps {
+		node ('jenkins-slave') {
+			// 	Create temp directories for storing the logs. Support for builds running in parallel as well by adding the build number at the end. 
+				FAILED_LOGS_DIR =  '/var/www/html/ci-logs/failed-rest-api-flexible-' + RESTAPI_BRANCH  + '-' + env.BUILD_NUMBER
+				ALL_LOGS_DIR    =  '/var/www/html/ci-logs/all-rest-api-flexible-'    + RESTAPI_BRANCH  + '-' + env.BUILD_NUMBER
+		
+			//	Delete logs older than 30 days.  
+				sh (script: "find /var/www/html/ci-logs/ -mtime +30 -exec rm -rf {} \\;", returnStdout: false)
+				sh (script: "rm -rf ${FAILED_LOGS_DIR} ${ALL_LOGS_DIR}", returnStdout: false )
+				sh (script: "mkdir -p ${FAILED_LOGS_DIR} ${ALL_LOGS_DIR}", returnStdout: false)
 
-stage ('Build Intellego binary'){
+			// 	Test suites are determined by looking for env variables of the format <suite>_tests=true. Ex: level1_tests=true 
+				TEST_SUITES =	sh (script: "env | grep 'tests=true' | \
+								sed 's/=true//g' | \
+								sed -e 'H;\${x;s/\\n/,/g;s/^,//;p;};d'", returnStdout: true).trim()
+				
+			//	We want to make sure no. of pairs chosen is not more than suites. No point in reserving a pair without a suite to run
+				def NO_OF_TEST_SUITES = sh (script: "env | grep 'tests=true' | sed 's/=true//g' | wc -l", returnStdout:true).trim()
+				
+				if ( PAIRS_TO_USE > NO_OF_TEST_SUITES ){
+					PAIRS_TO_USE  =  NO_OF_TEST_SUITES
+				}
+				
+				echo "INFO: Got TEST_SUITES as " + TEST_SUITES
+			
+			//	Get the IP addresses to work with. Master list resides (only) on jenkins-slave-1.  
+				node('jenkins-slave-1'){
+					try{
+						IP_ADDRESSES = sh (script: "/home/support/jenkins/dish_out_ci_machines.sh -g ${PAIRS_TO_USE}", returnStdout: true)
+					}
+					catch(err) {
+						emailext subject: 'FAILED No:' + env.BUILD_NUMBER + ' Intellego CI Pipeline. No free IPs left!', to: MAILING_LIST
+						currentBuild.result = 'FAILURE'
+						throw err
+					}
+					
+				echo "INFO: Got IPS: " + IP_ADDRESSES
+			}
+			
+			//	Start creating the Summary for emailing
+				prepare_summary(ALL_LOGS_DIR, INTELLEGO_CODE_BRANCH, RESTAPI_BRANCH, IP_ADDRESSES)
+			
+			// 	Send starting email
+				send_starting_email(MAILING_LIST, IP_ADDRESSES, TEST_SUITES)
+		
+			// 	If running only tests skip building binary
+				if ( ONLY_RUN_TESTS == 'false' ) {
 
-	/*
-	// "Send an email"
-	node ('master') {
-		mail (to: MAILING_LIST,
-		subject: "Job ${env.JOB_NAME} is running!",
-		body: 'Parameters - Code: ' + INTELLEGO_CODE_BRANCH + ' RESTAPI: ' + RESTAPI_BRANCH );
+				// 	If prebuilt-binary is supplied, don't build from scratch
+					if ( PREBUILT_BINARY_PATH ) {
+					    pre_built_binary(PREBUILT_BINARY_PATH, ALL_LOGS_DIR)
+					} 
+					else {
+						build_intellego_binary(INTELLEGO_CODE_BRANCH, INTELLEGO_VERSION, MAILING_LIST)
+					} 
+				} 
+				
+			// 	Create the test environments based on the IP addresses supplied
+				create_env(IP_ADDRESSES)
+			
+			// 	Generate the parallel steps 
+				sh 'python intellego/parallelism.py -i "' + IP_ADDRESSES + '" -t "' + TEST_SUITES + '" | sed "s/\\(.*\\)::/\\1/" > /tmp/parallel-steps'
+				sets = readFile('/tmp/parallel-steps')
+				SETS = sets.tokenize("::")
+				//	echo "Got the list of parallel steps as: " + SETS
+    
+			// 	Initialize the map we'll store the parallel steps in for execution
+				def stepsForParallel = [:]
+
+			// 	Loop that gets the parallel steps based on what we have so far
+				for (int i = 0; i < SETS.size(); i++) {
+					//	Get the actual string here.
+					def step = SETS.get(i)
+					//	echo "Parallel steps: " + step
+					def stepName = "${step}"
+        
+					stepsForParallel[stepName] = parallelstep(step, ALL_LOGS_DIR, FAILED_LOGS_DIR)
+				}
+			
+			//	Spawn the parallel blocks	
+				parallel stepsForParallel
+			
+			// 	Process the rest api results once all done
+				process_restapi_results(ALL_LOGS_DIR, FAILED_LOGS_DIR)
+		
+			//	All Done! Send final email. 
+				send_final_email(ALL_LOGS_DIR, FAILED_LOGS_DIR)
+			
+			//	Give back the IPs for next CI
+				give_back_ips(IP_ADDRESSES)
+
+		} // End of "node" block
+	} // End of "timestamp" block
+} // End of "try" block
+
+catch (err) {
+
+	node('jenkins-slave') {
+		// 	Catch any error not caught by individual try-catch blocks
+			emailext body: 'BUILD_URL = ' + env.BUILD_URL + '/consoleFull', subject: 'FAILED No:' + env.BUILD_NUMBER + ' Intellego CI Pipeline failure. ', to: MAILING_LIST
+		//	Also release the IP's because build failed
+			give_back_ips(IP_ADDRESSES)
+			currentBuild.result = 'FAILURE'
 	}
-    */
+}
+
+
+// 	Create the parallel steps
+	def parallelstep(inputString, ALL_LOGS_DIR, FAILED_LOGS_DIR) {
+		return {
+			node ('jenkins-slave') {
+				 
+				stage(inputString) {	
+					
+					def IS = " "
+					// 	convert string to list
+					IS = inputString.tokenize(',') 
+					echo "Got IS as: " + IS
+					// 	The last element is the list of IP addresses
+					IPS = IS[IS.size() - 1] 
+					
+					// 	Get the IPs for Intellego and VMC here
+					INTELLEGO_IP = IPS.tokenize(' ')[1] 
+					echo "Intellego IP is: " + INTELLEGO_IP
+					VMC_IP = IPS.tokenize(' ')[2]
+					echo "VMC IP is: " + VMC_IP
+					
+					// 	If we are only running tests no need to build or deploy
+					if ( ONLY_RUN_TESTS == 'false' ) {
+						//  Deploy + install
+					    deploy(IS, INTELLEGO_IP, VMC_IP, ALL_LOGS_DIR)  		
+					}
+					else {
+						// 	Proceed to testing
+						run_suites(IS, ALL_LOGS_DIR, "/tmp/${INTELLEGO_IP}-${VMC_IP}.yaml")
+					}
+				}	
+			}	
+		} 	
+	}
+
+//	Prepare the summary html file that will be emailed out at the very end
+	def prepare_summary (ALL_LOGS_DIR, INTELLEGO_CODE_BRANCH, RESTAPI_BRANCH, IP_ADDRESSES){
+		sh 'echo "<html>"  > ' + ALL_LOGS_DIR + '/Summary.HTML'                                                
+		sh 'echo "<head>" >> ' + ALL_LOGS_DIR + '/Summary.HTML'    
+		sh 'echo "<META HTTP-EQUIV="refresh" CONTENT="15">" >> ' + ALL_LOGS_DIR + '/Summary.HTML' 
+		sh 'echo "<body style=\\"font-family:Verdana; font-size: 9pt;\\">" >> ' + ALL_LOGS_DIR + '/Summary.HTML'
+		sh 'echo "</head>" >> ' + ALL_LOGS_DIR + '/Summary.HTML'                                                      
+		sh 'echo "<b>Build Details:</b>" >> ' + ALL_LOGS_DIR + '/Summary.HTML'
+		sh 'echo "<p>Intellego Source Branch: " ' + INTELLEGO_CODE_BRANCH + ' >> ' + ALL_LOGS_DIR + '/Summary.HTML'
+		sh 'echo "<p>Rest API Branch: " ' + RESTAPI_BRANCH + ' >> ' + ALL_LOGS_DIR + '/Summary.HTML'
+		sh 'echo "<p>Suites: " ' + TEST_SUITES + ' >> ' + ALL_LOGS_DIR + '/Summary.HTML'
+		sh 'echo "<p>IPs in Use: " ' + IP_ADDRESSES + ' >> ' + ALL_LOGS_DIR + '/Summary.HTML'
+		sh 'echo "<p>Console Output: <a href= "' + env.BUILD_URL + '"consoleFull>"' + env.BUILD_URL + '"consoleFull</a>"' + ' >> ' + ALL_LOGS_DIR + '/Summary.HTML'
+		sh 'echo "<p>Rest API Logs: <a href="http://10.0.156.71/ci-logs/all-rest-api-flexible-"' + RESTAPI_BRANCH + '-' + env.BUILD_NUMBER + '>Logs</a>" >> ' + ALL_LOGS_DIR + '/Summary.HTML'
+		sh 'echo "<p><b>Progress Log:</b><br>" >> ' + ALL_LOGS_DIR + '/Summary.HTML'
+	}
 	
-	// check if ISO needs to be upgraded
-	if ( ISO_UPGRADE ) {
-		node ('master') {
-		//	build job: 'upgrade-intellego-vms', parameters: [[$class: 'StringParameterValue', name: 'HOSTS', value: '10.0.158.131, 10.0.158.132, 10.0.158.134, 10.0.158.147, 10.0.158.148, 10.0.158.151, 10.0.158.152, 10.0.158.161'], [$class: 'StringParameterValue', name: 'VERSION', value: ISO_UPGRADE ], [$class: 'StringParameterValue', name: 'PRODUCT', value: 'intellego']]
+//	Draft and send an email at the very beginning
+	def send_starting_email(MAILING_LIST, IP_ADDRESSES, TEST_SUITES){
+		node ('jenkins-slave') {
+			//	deleteDir()
+			git url: 'git@bitbucket.org:ss8/scripts.git', branch: 'master'
+			//	Gather the latest CI scripts.  This is to avoid checking out again and again on all the CI vm's
+			stash name: "build-scripts", includes: "ci/install.sh, ci/copy-datawipe-conf.sh, ci/checkVMC.sh"
+			wrap([$class: 'BuildUser']) {
+				//	The email file is generated at /tmp/start_email.HTML of the jenkins-slave server chosen
+				sh (script: "./intellego/start_email.sh -i \"${IP_ADDRESSES}\" -t \"${TEST_SUITES}\" -u \"${BUILD_USER}\" ", returnStdout: false)
+			}
+			emailext mimeType: 'text/html', body: '${FILE,path="/tmp/start_email.HTML"}', \
+					 subject: 'START No:' + env.BUILD_NUMBER + ' Intellego CI Pipeline SRC:' \
+				     + INTELLEGO_CODE_BRANCH + ' REST:' + RESTAPI_BRANCH, to: MAILING_LIST
 		}
 	}
 
-	// Check if we are only running tests.  If yes, skip this block
-	if ( ONLY_RUN_TESTS == 'false' ) {
-
-		// If prebuilt-binary is supplied, don't build from scratch
-		
-		if ( PREBUILT_BINARY_PATH ) {
-			echo " ******* Skipping binary building steps ********"
-			def DIR = PREBUILT_BINARY_PATH
+//	Use a pre-built binary if supplied
+	def pre_built_binary (PREBUILT_BINARY_PATH) {
+		echo "******* Skipping binary building steps because pre-built binary was supplied *********"
+		def DIR = PREBUILT_BINARY_PATH
+		stage('Pre-built Binary') {
+			write_to_summary("\\<br\\>INFO: Processing Pre-Built Binary", ALL_LOGS_DIR)
 			node ('intellego-build-machine') {
 				try{
 					ws("${DIR}"){
-						//archive '*.bin'
+						
+						archive '*.bin'
 					}
 				}
 				catch(err){
-					emailext body: 'BUILD_URL = ' + env.BUILD_URL + '/consoleFull', subject: 'Could not find PREBUILT binary! ', to: MAILING_LIST
+					emailext subject: 'Could not find PREBUILT binary path: ' + PREBUILT_BINARY_PATH, to: MAILING_LIST
 					throw err
+					currentBuild.result = 'FAILURE'
 				}
 			}
-		} 
-		else {
+		}
+	}
+
+//	Build an intellego Binary
+	def build_intellego_binary (INTELLEGO_CODE_BRANCH, INTELLEGO_VERSION, MAILING_LIST){
+		stage('Intellego Binary Build'){
 			echo "*********************************************"
 			echo " ******** Building Intellego Binary *********"
 			echo "*********************************************"
@@ -65,22 +221,24 @@ stage ('Build Intellego binary'){
 				
 				ws('/home/support/intellego') {
 					echo "Checking out code..."
-					//git url: 'ssh://git@10.0.135.6/intellego.git', branch: INTELLEGO_CODE_BRANCH
+					git url: 'ssh://git@10.0.135.6/intellego.git', branch: INTELLEGO_CODE_BRANCH
 				}
 				
-				// Cleanup old binary
+				// 	Cleanup old binary
 				sh 'sudo rm -rf /home/support/bin/REL_' + INTELLEGO_VERSION + '/root/*'
 
-				// Generate name for the new BINARY based on timestamp
+				// 	Generate name for the new BINARY based on timestamp
 				BINARY = INTELLEGO_VERSION + '.' + INTELLEGO_CODE_BRANCH + '.' + env.BUILD_TIMESTAMP
                 
-                try {
+				try {
 					ws('/home/support/intellego/build_tool') {
 						sh 'sudo ./build-intellego.sh ' + BINARY 
+						//sh (script: "sudo ./build-intellego.sh ${BINARY} > /tmp/intellego-build.log 2>&1", returnStdout: true)
+						//stash name: "intellego-build-log", includes: "/tmp/intellego-build.log"
 					}
-                }
-                catch(err){
-					// Email in case the build failed
+				}
+				catch(err){
+					// 	Email in case the build failed
 					emailext body: 'BUILD_URL = ' + env.BUILD_URL + '/consoleFull', subject: 'Nightly coded pipeline: Binary build failed! ', to: MAILING_LIST
 					throw err
 				}
@@ -88,211 +246,157 @@ stage ('Build Intellego binary'){
 				echo "Archiving the binary..."
 				def DIR = '/home/support/bin/REL_' + INTELLEGO_VERSION + '/root/' + BINARY
 				ws("${DIR}") {
-					//archive '*.bin'
+					archive '*.bin'
 				}
-			}// node
-		} // end of else block
-	} // end of ONLY_RUN_TESTS
-} // End of stage
-
-
-
-node ('jenkins-slave') {
-    //deleteDir()
-    //git url: 'git@bitbucket.org:ss8/scripts.git'
-	
-	
-	def FAILED_LOGS_DIR = '/tmp/rest-api-flexible-' + RESTAPI_BRANCH
-	def ALL_LOGS_DIR = '/tmp/all-rest-api-flexible-' + RESTAPI_BRANCH
-
-	// Directories to hold the logs
-	node('jenkins-slave') {
-		sh (script: "rm -rf ${FAILED_LOGS_DIR} ${ALL_LOGS_DIR}", returnStdout: true)
-		sh (script: "mkdir -p ${FAILED_LOGS_DIR} ${ALL_LOGS_DIR}", returnStdout: true)
-	}
-	
-	
-	// Create the environment files
-	create_env(IP_ADDRESSES)
-	
-    sh 'python intellego/parallelism.py -i "' + IP_ADDRESSES + '" -t "' + TEST_SUITES + '" | sed "s/\\(.*\\)::/\\1/" > /tmp/aa'
-    sets = readFile('/tmp/aa')
-    //echo "Got the sets as: " + sets
-    // Dont remove this calculation.  
-    SETS = sets.tokenize("::")
-    echo "Got the list of parallel steps as: " + SETS
-    
-    
-    // The map we'll store the parallel steps in before executing them.
-	def stepsForParallel = [:]
-
-	for (int i = 0; i < SETS.size(); i++) {
-		// Get the actual string here.
-		def step = SETS.get(i)
-		echo "Parallel steps: " + step
-		def stepName = "${step}"
-        
-		stepsForParallel[stepName] = parallelstep(step, ALL_LOGS_DIR)
-	}
-
-	parallel stepsForParallel
-
-} // node
-
-
-
-} // End of timestamp block
-
-
-// ******************************************
-//
-// ***********   METHODS   ******************
-//
-// ******************************************
-
-// ************ MAIN METHOD THAT DOES EVERYTHING!! ********************
-def parallelstep(inputString, ALL_LOGS_DIR) {
-		return {
-			node ('jenkins-slave') {
-				
-
-				//stage(IPS) { 
-				stage(inputString) {	
-					//def TESTS = ' '
-					
-					IS = inputString.tokenize(',') // convert string to list
-					echo "Got IS as: " + IS
-					IPS = IS[IS.size() - 1] // The last element is the list of IP addresses
-					echo "Got IPS as: " + IPS
-					
-					// Dont change this.  This works!
-					INTELLEGO_IP = IPS.tokenize(' ')[1] 
-					echo "Got Intellego IP as: " + INTELLEGO_IP
-					VMC_IP = IPS.tokenize(' ')[2]
-					echo "Got VMC IP as: " + VMC_IP
-					
-					/*
-					if ( ONLY_RUN_TESTS == 'false' ) {	
-						//deploy(INTELLEGO_IP)
-						//deploy(VMC_IP)
-					
-						//install(VMC_IP, INTELLEGO_IP, INTELLEGO_CODE_BRANCH)
-					}
-					*/
-					// Proceed to testing
-					run_suites(IS, ALL_LOGS_DIR, "/tmp/${INTELLEGO_IP}-${VMC_IP}.yaml")
-					
-					
-					
-				} //stage block
-			} // node block
-		} //return block
-}
-
-def create_env(IP_ADDRESSES){
-	git url: 'git@bitbucket.org:ss8/scripts.git', branch: 'master'
-	sh (script: "./intellego/create_test_env.sh ${IP_ADDRESSES} ", returnStdout: false)
-}
-
-def run_suites(IS, ALL_LOGS_DIR, ENVFILE) {
-  
-	git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
-	dir('scripts'){
-		git url: 'git@bitbucket.org:ss8/scripts.git', branch: 'master'
-	}
-	sh (script: "./scripts/intellego/run_suites.sh -a \"${IS}\" -l ${ALL_LOGS_DIR} -e ${ENVFILE}", returnStdout: true)
-}
-
-def deploy(IP) {
-
-	def COPY_BINARY='sudo rm -f /SS8/SS8_Intellego.bin; sudo mv *.bin /SS8/SS8_Intellego.bin; sudo chmod 775 /SS8/SS8_Intellego.bin'
-	node(IP){
-		echo "************ Installing Intellego on " + IP  + "*****************"
-		def exists = fileExists '*.bin'
-		if (exists) {
-			sh 'sudo rm -f *.bin'
-		}
-		unarchive mapping: ['*.bin' : '.']
-		sh COPY_BINARY
-	}
-}
-
-def install(VMC_IP, INTELLEGO_IP, INTELLEGO_CODE_BRANCH) {
-
-	def NTPDATE = 'sudo -u root -i service ntpd stop; sudo -u root -i ntpdate 10.0.158.153; sudo -u root -i service ntpd start'
-	def COPY_DATAWIPE_CONF = 'sudo -u root -i /home/support/copy-datawipe-conf.sh'
-	def INTELLEGO_RESTART = 'sudo -u root -i /etc/init.d/intellego restart'
-	//def INTELLEGOOAMP_START = 'sudo -u root -i /etc/init.d/intellegooamp start'
-	def INTELLEGOOAMP_START = 'sudo -u root -i /opt/intellego/Base/bin/intellegooamp-super start'
-	//def CHECKPORTS = 'sudo -u root -i /home/support/checkPorts.sh'
-	def CHECKVMC = 'sudo -u root -i /home/support/checkVMC.sh'
-
-    
-	    try {
-			node(VMC_IP) {
-				sh NTPDATE
-				sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
 			}
+		}
+	}
+	
+//	Deploy binary to VM's and install
+	def deploy(IS, INTELLEGO_IP, VMC_IP, ALL_LOGS_DIR) {
+
+		def COPY_BINARY='sudo rm -f /SS8/SS8_Intellego.bin; sudo mv SS8*.bin /SS8/SS8_Intellego.bin; sudo chmod 775 /SS8/SS8_Intellego.bin'
+		def INTELLEGO_RESTART = 'sudo -u root -i /etc/init.d/intellego restart'
+		def INTELLEGOOAMP_START = 'sudo -u root -i /opt/intellego/Base/bin/intellegooamp-super start'
+		
+		node(VMC_IP){
+			write_to_summary("\\<br\\>INFO   :Deploying to ${VMC_IP}", ALL_LOGS_DIR)
+			//	Remove any other bin files to avoid runnning out of diskspace as well as wrong versions
+			def exists = fileExists 'SS8*.bin'
+			if (exists) {
+				sh 'sudo rm -f SS8*.bin'
+			}
+			deleteDir() //	To remove any other bin files that might be there
+			unarchive mapping: ['*.bin' : '.']
+			sh COPY_BINARY
+			
+			unstash "build-scripts"		// will unstash in a folder called ci
+			//	sh NTPDATE  
+			def INSTALL_SCRIPT = sh (script: "readlink -f ./ci/install.sh", returnStdout: true).trim()
+				try{
+					write_to_summary("\\<br\\>INFO   :Installing on ${VMC_IP}", ALL_LOGS_DIR)
+					timeout(time:30, unit:'MINUTES'){
+						sh (script: "chmod +x ${INSTALL_SCRIPT}; sudo -u root -i ${INSTALL_SCRIPT} -b ${INTELLEGO_CODE_BRANCH} > /dev/null 2>&1", returnStdout: true)
+					}
+					write_to_summary("\\<br\\>SUCCESS:Installed on ${VMC_IP}", ALL_LOGS_DIR)
+				}
+				catch(err){
+					write_to_summary("\\<br\\><b><font color=red>FAILED</b></font> :Installing on ${VMC_IP}", ALL_LOGS_DIR)
+				}
+		}
+		
+		node(INTELLEGO_IP){
+			write_to_summary("\\<br\\>INFO   :Deploying to ${INTELLEGO_IP}", ALL_LOGS_DIR)
+			
+			//	Remove any other bin files to avoid runnning out of diskspace as well as wrong versions
+			def exists = fileExists 'SS8*.bin'
+			if (exists) {
+				sh 'sudo rm -f SS8*.bin'
+			}
+			deleteDir() //	To remove any other bin files that might be there 
+			unarchive mapping: ['*.bin' : '.']
+			sh COPY_BINARY
+			
+			unstash "build-scripts"
+			//	sh NTPDATE
+			def INSTALL_SCRIPT = sh (script: "readlink -f ./ci/install.sh", returnStdout: true).trim()
+				try{
+					write_to_summary("\\<br\\>INFO   :Installing on ${INTELLEGO_IP}", ALL_LOGS_DIR)
+					timeout(time:30, unit:'MINUTES') {
+						sh (script: "chmod +x ${INSTALL_SCRIPT}; sudo -u root -i ${INSTALL_SCRIPT} -b ${INTELLEGO_CODE_BRANCH} > /dev/null 2>&1 ", returnStdout: true)
+					}
+					write_to_summary("\\<br\\>SUCCESS:   Installed on ${INTELLEGO_IP}", ALL_LOGS_DIR)
 					
-			node(INTELLEGO_IP) {
-				sh NTPDATE
-				sh 'sudo -u root -i /home/support/install.sh -b ' + INTELLEGO_CODE_BRANCH
-				sh COPY_DATAWIPE_CONF
+				}
+				catch(err){
+					write_to_summary("\\<br\\><b><font color=red>FAILED</b></font> :Installing on ${INTELLEGO_IP}", ALL_LOGS_DIR)
+				}
+				
+				write_to_summary("\\<br\\>SUCCESS:Post Install steps on ${INTELLEGO_IP}", ALL_LOGS_DIR)
 				sh INTELLEGO_RESTART
 				sh INTELLEGOOAMP_START
-				//sh CHECKPORTS
-			}
-					
-			node(VMC_IP) {
-				sh CHECKVMC
-			}
-		}
-		catch(err){
 				
-			throw err
+				def COPY_DATAWIPE_CONF = sh (script: "readlink -f ./ci/copy-datawipe-conf.sh", returnStdout: true).trim()
+				sh (script: "chmod +x ${COPY_DATAWIPE_CONF}; sudo -u root -i ${COPY_DATAWIPE_CONF}", returnStdout: true)
+				
+				//sh CHECKPORTS
 		}
-
-}
-
-/*
-
-def run_suite(suite, env, ALL_LOGS_DIR) {
-
-	//try { 
-		//deleteDir()
-		//git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
-		sh ("./gradlew -Dreporting=${REPORTING} -DbuildLogUrl=BUILD_URL/console -DpipelineName=Intellego-CI-Coded-Pipeline -Dsuite=resources/suites/${suite}.xml -Denv=${env} run > ${ALL_LOGS_DIR}/${suite}.log 2>&1", returnStdout:true)
-
 		
-			; \
-		    cp build/reports/tests/emailable-report.html  build/reports/tests/${suite}.html ; \
-			cp build/reports/tests/${suite}.html ${ALL_LOGS_DIR}", returnStdout:true)
+		node(VMC_IP) {
+			write_to_summary("\\<br\\>SUCCESS:Post Intall steps on ${VMC_IP}", ALL_LOGS_DIR)
+			def CHECKVMC = sh (script: "readlink -f ./ci/checkVMC.sh", returnStdout: true).trim()
+			sh (script: "chmod +x ${CHECKVMC}; sudo -u root -i ${CHECKVMC} >&2", returnStdout: true)
+		}
+	
+		echo "INFO: Got IS inside deploy as: " + IS	
+		// 	Proceed to testing
+		run_suites(IS, ALL_LOGS_DIR, "/tmp/${INTELLEGO_IP}-${VMC_IP}.yaml")
+	}
+
+//	Create the test environments based on the IP addresses supplied
+	def create_env(IP_ADDRESSES){
+		git url: 'git@bitbucket.org:ss8/scripts.git', branch: 'master'
+		sh (script: "./intellego/create_test_env.sh ${IP_ADDRESSES} ", returnStdout: false)
+	}
+
+//	Run the suites
+	def run_suites(IS, ALL_LOGS_DIR, ENVFILE) {
+		//write_to_summary("\\<br\\>INFO   :Running Test suites", ALL_LOGS_DIR)
+		echo "INFO: IS inside run_suites as: " + IS
+		git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
+		// 	To avoid conflicting with another directory called scripts inside the intellego repo, checkout within a repo called ci_scripts
+		dir('ci_scripts'){
+			git url: 'git@bitbucket.org:ss8/scripts.git', branch: 'master'
+		}
+		//timeout(time:3, unit:'HOURS') {
+			sh (script: "./ci_scripts/intellego/run_suites.sh -a \"${IS}\" -l ${ALL_LOGS_DIR} -e ${ENVFILE}", returnStdout: false)
+		//}
+	}
+
+//	Process the rest api results to figure out how many failed, etc.
+	def process_restapi_results(ALL_LOGS_DIR, FAILED_LOGS_DIR){
+		echo "Processing rest api test results!"
+		sh (script: "./intellego/process_restapi_results.sh ${ALL_LOGS_DIR} ${FAILED_LOGS_DIR}", returnStdout: false)
+	}
+
+//	Final email
+	def send_final_email(ALL_LOGS_DIR, FAILED_LOGS_DIR) {
+		node('jenkins-slave'){
+			echo " ************* Sending logs in an email ********************"
+			try{
+				ws ("${FAILED_LOGS_DIR}") {
+					emailext attachmentsPattern: '*.log, *.html', mimeType: 'text/html', body: '${FILE,path="' + ALL_LOGS_DIR + '/Summary.HTML"}', subject: 'END No:' + env.BUILD_NUMBER + ' Intellego CI Pipeline SRC: ' + INTELLEGO_CODE_BRANCH + ' REST:' + RESTAPI_BRANCH, to: MAILING_LIST
+				}	
+				sh (script: "zip -j Failed_Tests_logs.zip ${FAILED_LOGS_DIR}/*", returnStdout: true)
+				sh (script: "zip -j All_Tests_logs.zip ${ALL_LOGS_DIR}/*", returnStdout: true)
+				archive 'All_Tests_logs.zip, Failed_Tests_logs.zip, ${ALL_LOGS_DIR}/Summary.HTML'
 			
-		
-		
-	
-        //sh 'zip -j ' + TMPDIR + '/level1.zip build/reports/tests/level1.html'
-        sh 'echo "<br>" >> ' + TMPDIR + '/Summary.html' 
-        sh 'echo "--------------" >> ' + TMPDIR + '/Summary.html' 
-        sh 'echo "<br>" >> ' + TMPDIR + '/Summary.html' 
-        sh 'echo ' + suite + ' >> ' + TMPDIR + '/Summary.html' 
-        sh 'echo "<br>" >> ' + TMPDIR + '/Summary.html' 
-        sh 'echo "--------------" >> ' + TMPDIR + '/Summary.html' 
-        sh 'echo "<br>" >> ' + TMPDIR + '/Summary.html' 
-        sh 'grep failed build/reports/tests/testng-results.xml | head -1 | sed -e "s/<//" -e "s/>//" -e "s/testng-results //" >> ' + TMPDIR + '/Summary.html'
-        sh ('grep -wq \"SUCCESSFUL\" ' + suite + '.log ; echo $?')
-    } // try block closing
-    catch(err) {
-		currentBuild.result = 'SUCCESS' // If not set to SUCCESS, the pipeline interprets to an entire failed build
-        //TESTS_FAILED++  // increment the count of tests failed
-        echo "False. Successful not found.  need to copy"
-        sh 'cp ' + suite + '.log build/reports/tests/' + suite +'.html ' + TMPDIR
-    } // catch block closing
+			}
+			catch(err){
+					currentBuild.result = 'SUCCESS'
+			}	 
+		} 
+	} 
 
-	
-} // end of def run_suite        
+//	Put the IP's back
+	def give_back_ips(IP_ADDRESSES){
+		node('jenkins-slave-1'){	
+			try{
+				sh (script: "/home/support/jenkins/dish_out_ci_machines.sh -t \"${IP_ADDRESSES}\" ", returnStdout: true)
+				echo "Successfully released the IPs"
+			}
+			catch(err) {
+				emailext subject: 'FAILED No:' + env.BUILD_NUMBER + ' Could not free-up the IPs!', to: MAILING_LIST
+				currentBuild.result = 'FAILURE'
+				throw err
+			}	
+		}
+	}
 
-*/
-
-
+	//	Write to summary file
+	def write_to_summary(message, ALL_LOGS_DIR ){
+		node('jenkins-slave') {
+			sh (script: "echo ${message} >> ${ALL_LOGS_DIR}/Summary.HTML", returnStdout: true)
+		}
+	}
 
