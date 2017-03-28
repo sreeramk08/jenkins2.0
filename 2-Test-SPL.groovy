@@ -15,26 +15,31 @@ stage ('Creating VM') {
 	node('ansible'){
 		ws ("${WS}") {
 			deleteDir()
-			// Directory that will be used throughout the build 
 			git url: 'git@bitbucket.org:ss8/scripts.git', branch: 'master'
 				
+		//	Host name is predefined in the ansible_hosts file. 
 			def host = sh(script: "ansible -i ansible/ansible_hosts ${CONFIG} --list-hosts  | grep -v hosts | sed -e 's/^[[:space:]]*//' | tr '\n' ' ' ", returnStdout: true).trim()	
-				
-			// Create vm
-			if (CONFIG == "intellego-spl") {
+			
+		//	Only intellego as of now uses RHEL6.  The rest use RHEL-7	
+		    if (CONFIG == "intellego-spl") {
 				OS_TYPE = "rhel6_64Guest"
 			}
 			else {
 			    OS_TYPE = "rhel7_64Guest"
 			}
-			
-			remove_vms (host, WS)
-			
+		//	Clean up first.  Remove first and then re-create.  handle xcipio spl differently. 
+			if (CONFIG != "xcipio-spl"){
+				remove_vms (host, WS)
+			}
+		//	Create fresh after removing in previous step
 			create_vms(host, WS, OS_TYPE, SPL_VERSION)
-				
-			// Networking
+	
 			networking_vms(host, IP_ADDRESS, WS)
-				
+			
+		//	For Sensor, we also need to collect the rpmdb from the vm 
+			if (CONFIG == 'sensor-spl'){
+				collect_rpmdb(SPL_VERSION,IP_ADDRESS, WS)
+			}			
 		}
 	}
 }
@@ -54,7 +59,7 @@ stage ('Nessus Scan'){
 				// Determine which vm to remove
 				def host = sh(script: "ansible -i ansible/ansible_hosts ${CONFIG} --list-hosts  | grep -v hosts | sed -e 's/^[[:space:]]*//' | tr '\n' ' ' ", returnStdout: true).trim()
 				// Cleanup after nessus scan
-				//remove_vms (host, WS)
+				remove_vms (host, WS)
 			}
 	}			
 }
@@ -92,7 +97,34 @@ timeout(time: 2, unit: 'DAYS'){
 
 
 
-// ##################### Remove the vms ###############################
+def collect_rpmdb(SPL_VERSION,IP_ADDRESS, WS){
+	node('ansible'){
+		//	This step wlll fetch the rpmdb from the vm created and put it in the jenkins-slave-1
+		sh 'cd ' + WS + ' ; echo ${IP_ADDRESS} ansible_password=ss8inc > ansible/hosts; \
+                    ansible-playbook -i ansible/hosts ansible/sensor_rpmdb.yaml \
+		            -c paramiko --tags create_rpmdb,fetch_rpmdb --extra-vars "SPL_VERSION=' + SPL_VERSION + '"'
+        //	Now push it to one of the ISO Machines
+		if (PLATFORM == 'RHEL-6'){
+			//	Push the rpmdb to the RHEL-6 vm
+			sh 'cd ' + WS + ' ; echo 10.0.225.170 ansible_password=' + ISO_BUILD_USER_PASSWD + ' ansible_user=iso-build-user > ansible/hosts; \
+			ansible-playbook -i ansible/hosts ansible/sensor_rpmdb.yaml \
+			-c paramiko --tags copy_rpmdb --extra-vars "SPL_VERSION=' + SPL_VERSION + ' PLATFORM=' + PLATFORM + '"'
+		}
+		else {
+			//	Push the rpmdb to the RHEL-7 vm
+			sh 'cd ' + WS + ' ; echo 10.0.225.171 ansible_password=' + ISO_BUILD_USER_PASSWD + ' ansible_user=iso-build-user > ansible/hosts; \
+			ansible-playbook -i ansible/hosts ansible/sensor_rpmdb.yaml \
+			-c paramiko --tags copy_rpmdb --extra-vars "SPL_VERSION=' + SPL_VERSION + ' PLATFORM=' + PLATFORM + '"'
+			node('rhel7-iso-build-machine'){
+				ws('/home/iso-build-user/ISO_BUILD/platform-isos/RHEL-7/addons/devel-addon'){
+					sh 'sudo gmake ci VERSION=' + SPL_VERSION
+				}
+			}
+			
+		}
+	}
+	
+}
 
 def remove_vms(host, WS) {
 	stage ('Purging VM') {
