@@ -2,22 +2,6 @@
 
 currentBuild.displayName = PROJECT + '-' + VERSION
 
-if (RPM_SYNC == 'true' ) {
-
-	stage ('Sync RPMs') {
-	
-		if (PLATFORM == 'RHEL-6' ) {
-			node ('rhel6-iso-build-machine') {
-				update_rhel6_repo()
-			}
-		}
-		else if ( PLATFORM == 'RHEL-7' ) {
-			node ('rhel7-repo') {
-				update_rhel7_repo()
-			}
-		}
-	}
-}
 
 stage ('Build ISO') {
 
@@ -122,42 +106,3 @@ stage ('Build ISO') {
 
 
 
-//Methods
-
-def update_rhel7_repo() {
-	echo "Running a repo sync with Redhat 7"
-	ws('/home/iso-build-user/scripts'){
-		try { 
-			sh 'sudo  ./unregister.sh ; sudo ./subscribe.sh '
-		}
-		catch(err){ // If registration failed, unregister and re-register
-			emailext body: 'Subscritption for RHEL-7 failed ', attachLog: true, subject: 'Subscritption for RHEL-7 failed!', to: MAILING_LIST
-		}
-		// Try to sync
-		
-		sh 'sudo ./repo_sync.sh'
-		
-		// if we got here the repo sync was successful
-		sh 'sudo ./rhel7_repofix.sh' //  Fix issues in repo
-		// Unsubscribe once done
-		sh 'sudo ./unregister.sh'
-	}
-}
-
-def update_rhel6_repo() {
-	echo "Running a repo sync with Redhat 6"
-	ws('/home/iso-build-user/scripts'){
-		try { 
-			sh 'sudo  ./unregister.sh ; sudo ./subscribe.sh ' 
-		}
-		catch(err){ 
-			emailext body: 'Subscritption for RHEL-6 failed ', attachLog: true, subject: 'Subscritption for RHEL-6 failed!', to: MAILING_LIST
-		}
-		// Try to sync
-		
-		sh 'sudo  ./repoSync-NG.sh'
-		
-		// if we got here the repo sync was successful
-		sh 'sudo  ./clean.sh ; sudo ./repoFix.sh ; sudo  ./unregister.sh' // Cleanup
-	}
-}
