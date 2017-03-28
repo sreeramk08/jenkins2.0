@@ -2,7 +2,7 @@
 
 currentBuild.displayName = PROJECT + '-' + VERSION	
 
-stage('Copy to Releases'){
+stage('Release ISO'){
 
 	
 		if (PLATFORM == 'RHEL-6') {
@@ -42,27 +42,34 @@ def email_send(PROJECT, VERSION) {
 	if (PROJECT == 'intellego') {
 	
 		MAILING_LIST = 'skrishna@ss8.com'
-		emailext mimeType: 'text/html', body: '${FILE,path="/tmp/final-email-${PROJECT}-${VERSION}.html"}', subject: 'A new SPL for ' + PROJECT + ' is available', to: MAILING_LIST
+		emailext mimeType: 'text/html', body: '${FILE,path="/tmp/final-email-${PROJECT}-${VERSION}.html"}', subject: 'New SPL Version ' + VERSION + ' for ' + PROJECT + ' is available', to: MAILING_LIST
 
 	}
 	else if (PROJECT == 'sensor'){
 	
 		MAILING_LIST = 'skrishna@ss8.com'
-		emailext mimeType: 'text/html', body: '${FILE,path="/tmp/final-email-${PROJECT}-${VERSION}.html"}', subject: 'A new SPL for ' + PROJECT + ' is available', to: MAILING_LIST
+		emailext mimeType: 'text/html', body: '${FILE,path="/tmp/final-email-${PROJECT}-${VERSION}.html"}', subject: 'New SPL Version ' + VERSION + ' for ' + PROJECT + ' is available', to: MAILING_LIST
 		
 	}
 	
 	else if (PROJECT == 'discovery'){
 	
 		MAILING_LIST = 'skrishna@ss8.com'
-		emailext mimeType: 'text/html', body: '${FILE,path="/tmp/final-email-${PROJECT}-${VERSION}.html"}', subject: 'A new SPL for ' + PROJECT + ' is available', to: MAILING_LIST
+		emailext mimeType: 'text/html', body: '${FILE,path="/tmp/final-email-${PROJECT}-${VERSION}.html"}', subject: 'New SPL Version ' + VERSION + ' for ' + PROJECT + ' is available', to: MAILING_LIST
 		
 	}
 	else if (PROJECT == 'security-analytics'){
 	
 		MAILING_LIST = 'skrishna@ss8.com'
-		emailext mimeType: 'text/html', body: '${FILE,path="/tmp/final-email-${PROJECT}-${VERSION}.html"}', subject: 'A new SPL for ' + PROJECT + ' is available', to: MAILING_LIST
+		emailext mimeType: 'text/html', body: '${FILE,path="/tmp/final-email-${PROJECT}-${VERSION}.html"}', subject: 'New SPL Version ' + VERSION + ' for ' + PROJECT + ' is available', to: MAILING_LIST
 		
+	}
+	
+	else if (PROJECT == 'xcipio'){
+		
+		MAILING_LIST = 'skrishna@ss8.com'
+		emailext mimeType: 'text/html', body: '${FILE,path="/tmp/final-email-${PROJECT}-${VERSION}.html"}', subject: 'New SPL Version ' + VERSION + ' for ' + PROJECT + ' is available', to: MAILING_LIST
+			
 	}
 	
 }
