@@ -4,7 +4,7 @@ def targets = TARGETS.tokenize(",")
 
 def parallelstep(inputString) {
     return {
-       node ('jenkins-slave') {
+       node ('nessus') {
           stage(inputString) {
              echo "Working on :" + inputString
              // call the gradle block here
@@ -15,7 +15,7 @@ def parallelstep(inputString) {
 }
 
 def run_scan(target){
-	node ('jenkins-slave') {
+	node ('nessus') {
 		// source code from git
 		deleteDir()
         git url: 'git@bitbucket.org:ss8/scripts.git', branch: 'master'
@@ -27,9 +27,7 @@ def run_scan(target){
 
 stage ('Init'){
     
-    node ('jenkins-slave') {
-        
-
+    node ('nessus') {
         // The map we'll store the parallel steps in before executing them.
         def stepsForParallel = [:]
         //Assign items to the map
@@ -47,11 +45,7 @@ stage ('Init'){
 
         //Pass the map to the parallel step
         parallel stepsForParallel
-
-        
-        
     }
-    
 }		
 
 /*
@@ -75,8 +69,7 @@ stage ('nessus-scan') {
 
 stage ('Reporting') {
 	
-		node('jenkins-slave'){
-			
+		node('nessus'){
 			def TMPDIR = '/tmp/nessus-scan-logs'
 			sh 'rm -rf ' + TMPDIR
 			sh 'mkdir -p ' + TMPDIR
@@ -97,6 +90,8 @@ stage ('Reporting') {
 					sh 'echo "------------------------------------------" >> Summary'
 					sh 'echo "<br>" >> Summary'
 					sh 'for file in `ls *.txt`; do cat "$file" >> Summary ; echo "<br>" >> Summary; done'
+					archive '*.html'
+
 					emailext attachmentsPattern: '*.html', body: '${FILE,path="' + TMPDIR + '/Summary"}', subject: 'Nessus scan results for: ' + TARGETS, to: MAILING_LIST
 					//emailext attachmentsPattern: '*.html', mimeType: 'text/html', body: '${FILE,path="' + TMPDIR + '/Summary.HTML"}', subject: 'Nessus scan results for: ' + TARGETS, to: MAILING_LIST
 				}
