@@ -11,6 +11,7 @@ def ALL_LOGS_DIR = ""
 def FAILED_LOGS_DIR = ""
 
 
+
 //	Start 
 try {
 	timestamps {
@@ -19,8 +20,7 @@ try {
 				FAILED_LOGS_DIR =  '/var/www/html/ci-logs/failed-rest-api-flexible-' + RESTAPI_BRANCH  + '-' + env.BUILD_NUMBER
 				ALL_LOGS_DIR    =  '/var/www/html/ci-logs/all-rest-api-flexible-'    + RESTAPI_BRANCH  + '-' + env.BUILD_NUMBER
 		
-			//	Delete logs older than 30 days.  
-				sh (script: "find /var/www/html/ci-logs/ -mtime +30 -exec rm -rf {} \\;", returnStdout: false)
+			//	Cleanup and recreate 
 				sh (script: "rm -rf ${FAILED_LOGS_DIR} ${ALL_LOGS_DIR}", returnStdout: false )
 				sh (script: "mkdir -p ${FAILED_LOGS_DIR} ${ALL_LOGS_DIR}", returnStdout: false)
 
@@ -30,7 +30,7 @@ try {
 								sed -e 'H;\${x;s/\\n/,/g;s/^,//;p;};d'", returnStdout: true).trim()
 				
 			//	We want to make sure no. of pairs chosen is not more than suites. No point in reserving a pair without a suite to run
-				def NO_OF_TEST_SUITES = sh (script: "env | grep 'tests=true' | sed 's/=true//g' | wc -l", returnStdout:true).trim()
+				NO_OF_TEST_SUITES = sh (script: "env | grep 'tests=true' | sed 's/=true//g' | wc -l", returnStdout:true).trim()
 				
 				if ( PAIRS_TO_USE > NO_OF_TEST_SUITES ){
 					PAIRS_TO_USE  =  NO_OF_TEST_SUITES
@@ -53,7 +53,7 @@ try {
 			}
 			
 			//	Start creating the Summary for emailing
-				prepare_summary(ALL_LOGS_DIR, INTELLEGO_CODE_BRANCH, RESTAPI_BRANCH, IP_ADDRESSES)
+				prepare_summary(ALL_LOGS_DIR, INTELLEGO_CODE_BRANCH, RESTAPI_BRANCH, IP_ADDRESSES, TEST_SUITES)
 			
 			// 	Send starting email
 				send_starting_email(MAILING_LIST, IP_ADDRESSES, TEST_SUITES)
@@ -66,7 +66,7 @@ try {
 					    pre_built_binary(PREBUILT_BINARY_PATH, ALL_LOGS_DIR)
 					} 
 					else {
-						build_intellego_binary(INTELLEGO_CODE_BRANCH, INTELLEGO_VERSION, MAILING_LIST)
+						build_intellego_binary(INTELLEGO_CODE_BRANCH, INTELLEGO_VERSION, MAILING_LIST, ALL_LOGS_DIR)
 					} 
 				} 
 				
@@ -115,6 +115,7 @@ catch (err) {
 			emailext body: 'BUILD_URL = ' + env.BUILD_URL + '/consoleFull', subject: 'FAILED No:' + env.BUILD_NUMBER + ' Intellego CI Pipeline failure. ', to: MAILING_LIST
 		//	Also release the IP's because build failed
 			give_back_ips(IP_ADDRESSES)
+			write_to_summary("\\<br\\><b>BUILD FAILED OR ABORTED!</b>", ALL_LOGS_DIR)
 			currentBuild.result = 'FAILURE'
 	}
 }
@@ -155,10 +156,10 @@ catch (err) {
 	}
 
 //	Prepare the summary html file that will be emailed out at the very end
-	def prepare_summary (ALL_LOGS_DIR, INTELLEGO_CODE_BRANCH, RESTAPI_BRANCH, IP_ADDRESSES){
+	def prepare_summary (ALL_LOGS_DIR, INTELLEGO_CODE_BRANCH, RESTAPI_BRANCH, IP_ADDRESSES, TEST_SUITES){
 		sh 'echo "<html>"  > ' + ALL_LOGS_DIR + '/Summary.HTML'                                                
 		sh 'echo "<head>" >> ' + ALL_LOGS_DIR + '/Summary.HTML'    
-		sh 'echo "<META HTTP-EQUIV="refresh" CONTENT="15">" >> ' + ALL_LOGS_DIR + '/Summary.HTML' 
+		sh 'echo "<META HTTP-EQUIV="refresh" CONTENT="90">" >> ' + ALL_LOGS_DIR + '/Summary.HTML' 
 		sh 'echo "<body style=\\"font-family:Verdana; font-size: 9pt;\\">" >> ' + ALL_LOGS_DIR + '/Summary.HTML'
 		sh 'echo "</head>" >> ' + ALL_LOGS_DIR + '/Summary.HTML'                                                      
 		sh 'echo "<b>Build Details:</b>" >> ' + ALL_LOGS_DIR + '/Summary.HTML'
@@ -181,19 +182,20 @@ catch (err) {
 			wrap([$class: 'BuildUser']) {
 				//	The email file is generated at /tmp/start_email.HTML of the jenkins-slave server chosen
 				sh (script: "./intellego/start_email.sh -i \"${IP_ADDRESSES}\" -t \"${TEST_SUITES}\" -u \"${BUILD_USER}\" ", returnStdout: false)
-			}
-			emailext mimeType: 'text/html', body: '${FILE,path="/tmp/start_email.HTML"}', \
+			
+				emailext mimeType: 'text/html', body: '${FILE,path="/tmp/start_email.HTML"}', \
 					 subject: 'START No:' + env.BUILD_NUMBER + ' Intellego CI Pipeline SRC:' \
-				     + INTELLEGO_CODE_BRANCH + ' REST:' + RESTAPI_BRANCH, to: MAILING_LIST
+				     + INTELLEGO_CODE_BRANCH + ' REST:' + RESTAPI_BRANCH + ' BY:' + env.BUILD_USER, to: MAILING_LIST
+			}
 		}
 	}
 
 //	Use a pre-built binary if supplied
-	def pre_built_binary (PREBUILT_BINARY_PATH) {
+	def pre_built_binary (PREBUILT_BINARY_PATH, ALL_LOGS_DIR) {
 		echo "******* Skipping binary building steps because pre-built binary was supplied *********"
 		def DIR = PREBUILT_BINARY_PATH
 		stage('Pre-built Binary') {
-			write_to_summary("\\<br\\>INFO: Processing Pre-Built Binary", ALL_LOGS_DIR)
+			write_to_summary("INFO: Processing Pre-Built Binary\\<br\\>", ALL_LOGS_DIR)
 			node ('intellego-build-machine') {
 				try{
 					ws("${DIR}"){
@@ -211,8 +213,9 @@ catch (err) {
 	}
 
 //	Build an intellego Binary
-	def build_intellego_binary (INTELLEGO_CODE_BRANCH, INTELLEGO_VERSION, MAILING_LIST){
+	def build_intellego_binary (INTELLEGO_CODE_BRANCH, INTELLEGO_VERSION, MAILING_LIST, ALL_LOGS_DIR){
 		stage('Intellego Binary Build'){
+			write_to_summary("INFO: Building Intellego Binary\\<br\\>", ALL_LOGS_DIR)
 			echo "*********************************************"
 			echo " ******** Building Intellego Binary *********"
 			echo "*********************************************"
@@ -254,13 +257,13 @@ catch (err) {
 	
 //	Deploy binary to VM's and install
 	def deploy(IS, INTELLEGO_IP, VMC_IP, ALL_LOGS_DIR) {
-
-		def COPY_BINARY='sudo rm -f /SS8/SS8_Intellego.bin; sudo mv SS8*.bin /SS8/SS8_Intellego.bin; sudo chmod 775 /SS8/SS8_Intellego.bin'
+		def NTPDATE = 'sudo -u root -i service ntpd stop; sudo -u root -i ntpdate 10.0.158.153; sudo -u root -i service ntpd start'
+		def COPY_BINARY = 'sudo rm -f /SS8/SS8_Intellego.bin; sudo mv SS8*.bin /SS8/SS8_Intellego.bin; sudo chmod 775 /SS8/SS8_Intellego.bin'
 		def INTELLEGO_RESTART = 'sudo -u root -i /etc/init.d/intellego restart'
 		def INTELLEGOOAMP_START = 'sudo -u root -i /opt/intellego/Base/bin/intellegooamp-super start'
 		
 		node(VMC_IP){
-			write_to_summary("\\<br\\>INFO   :Deploying to ${VMC_IP}", ALL_LOGS_DIR)
+			write_to_summary("INFO: Deploying to ${VMC_IP}\\<br\\>", ALL_LOGS_DIR)
 			//	Remove any other bin files to avoid runnning out of diskspace as well as wrong versions
 			def exists = fileExists 'SS8*.bin'
 			if (exists) {
@@ -271,22 +274,22 @@ catch (err) {
 			sh COPY_BINARY
 			
 			unstash "build-scripts"		// will unstash in a folder called ci
-			//	sh NTPDATE  
+			sh NTPDATE  
 			def INSTALL_SCRIPT = sh (script: "readlink -f ./ci/install.sh", returnStdout: true).trim()
 				try{
-					write_to_summary("\\<br\\>INFO   :Installing on ${VMC_IP}", ALL_LOGS_DIR)
+					write_to_summary("INFO: Installing on ${VMC_IP}\\<br\\>", ALL_LOGS_DIR)
 					timeout(time:30, unit:'MINUTES'){
 						sh (script: "chmod +x ${INSTALL_SCRIPT}; sudo -u root -i ${INSTALL_SCRIPT} -b ${INTELLEGO_CODE_BRANCH} > /dev/null 2>&1", returnStdout: true)
 					}
-					write_to_summary("\\<br\\>SUCCESS:Installed on ${VMC_IP}", ALL_LOGS_DIR)
+					write_to_summary("SUCCESS:Installed on ${VMC_IP}\\<br\\>", ALL_LOGS_DIR)
 				}
 				catch(err){
-					write_to_summary("\\<br\\><b><font color=red>FAILED</b></font> :Installing on ${VMC_IP}", ALL_LOGS_DIR)
+					write_to_summary("FAILED:Installing on ${VMC_IP}\\<br\\>", ALL_LOGS_DIR)
 				}
 		}
 		
 		node(INTELLEGO_IP){
-			write_to_summary("\\<br\\>INFO   :Deploying to ${INTELLEGO_IP}", ALL_LOGS_DIR)
+			write_to_summary("INFO: Deploying to ${INTELLEGO_IP}\\<br\\>", ALL_LOGS_DIR)
 			
 			//	Remove any other bin files to avoid runnning out of diskspace as well as wrong versions
 			def exists = fileExists 'SS8*.bin'
@@ -297,22 +300,23 @@ catch (err) {
 			unarchive mapping: ['*.bin' : '.']
 			sh COPY_BINARY
 			
+			sh 'sudo mount -a'
 			unstash "build-scripts"
-			//	sh NTPDATE
+			sh NTPDATE
 			def INSTALL_SCRIPT = sh (script: "readlink -f ./ci/install.sh", returnStdout: true).trim()
 				try{
-					write_to_summary("\\<br\\>INFO   :Installing on ${INTELLEGO_IP}", ALL_LOGS_DIR)
+					write_to_summary("INFO: Installing on ${INTELLEGO_IP}\\<br\\>", ALL_LOGS_DIR)
 					timeout(time:30, unit:'MINUTES') {
 						sh (script: "chmod +x ${INSTALL_SCRIPT}; sudo -u root -i ${INSTALL_SCRIPT} -b ${INTELLEGO_CODE_BRANCH} > /dev/null 2>&1 ", returnStdout: true)
 					}
-					write_to_summary("\\<br\\>SUCCESS:   Installed on ${INTELLEGO_IP}", ALL_LOGS_DIR)
+					write_to_summary("SUCCESS:   Installed on ${INTELLEGO_IP}\\<br\\>", ALL_LOGS_DIR)
 					
 				}
 				catch(err){
-					write_to_summary("\\<br\\><b><font color=red>FAILED</b></font> :Installing on ${INTELLEGO_IP}", ALL_LOGS_DIR)
+					write_to_summary("FAILED:Installing on ${INTELLEGO_IP}\\<br\\>", ALL_LOGS_DIR)
 				}
 				
-				write_to_summary("\\<br\\>SUCCESS:Post Install steps on ${INTELLEGO_IP}", ALL_LOGS_DIR)
+				write_to_summary("SUCCESS:Post Install steps on ${INTELLEGO_IP}\\<br\\>", ALL_LOGS_DIR)
 				sh INTELLEGO_RESTART
 				sh INTELLEGOOAMP_START
 				
@@ -323,9 +327,12 @@ catch (err) {
 		}
 		
 		node(VMC_IP) {
-			write_to_summary("\\<br\\>SUCCESS:Post Intall steps on ${VMC_IP}", ALL_LOGS_DIR)
+			write_to_summary("SUCCESS:Post Install steps on ${VMC_IP}\\<br\\>", ALL_LOGS_DIR)
 			def CHECKVMC = sh (script: "readlink -f ./ci/checkVMC.sh", returnStdout: true).trim()
-			sh (script: "chmod +x ${CHECKVMC}; sudo -u root -i ${CHECKVMC} >&2", returnStdout: true)
+		//	Sometimes at this step the pipeline will get stuck
+			timeout(time:10, unit:'MINUTES') {
+				sh (script: "chmod +x ${CHECKVMC}; sudo -u root -i ${CHECKVMC} >&2", returnStdout: true)
+			}
 		}
 	
 		echo "INFO: Got IS inside deploy as: " + IS	
@@ -341,8 +348,8 @@ catch (err) {
 
 //	Run the suites
 	def run_suites(IS, ALL_LOGS_DIR, ENVFILE) {
-		//write_to_summary("\\<br\\>INFO   :Running Test suites", ALL_LOGS_DIR)
 		echo "INFO: IS inside run_suites as: " + IS
+		deleteDir()
 		git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
 		// 	To avoid conflicting with another directory called scripts inside the intellego repo, checkout within a repo called ci_scripts
 		dir('ci_scripts'){
@@ -365,7 +372,9 @@ catch (err) {
 			echo " ************* Sending logs in an email ********************"
 			try{
 				ws ("${FAILED_LOGS_DIR}") {
-					emailext attachmentsPattern: '*.log, *.html', mimeType: 'text/html', body: '${FILE,path="' + ALL_LOGS_DIR + '/Summary.HTML"}', subject: 'END No:' + env.BUILD_NUMBER + ' Intellego CI Pipeline SRC: ' + INTELLEGO_CODE_BRANCH + ' REST:' + RESTAPI_BRANCH, to: MAILING_LIST
+					wrap([$class: 'BuildUser']) {
+						emailext attachmentsPattern: '*.log, *.html', mimeType: 'text/html', body: '${FILE,path="' + ALL_LOGS_DIR + '/Summary.HTML"}', subject: 'END No:' + env.BUILD_NUMBER + ' Intellego CI Pipeline SRC: ' + INTELLEGO_CODE_BRANCH + ' REST:' + RESTAPI_BRANCH + ' BY:' + env.BUILD_USER, to: MAILING_LIST
+					}
 				}	
 				sh (script: "zip -j Failed_Tests_logs.zip ${FAILED_LOGS_DIR}/*", returnStdout: true)
 				sh (script: "zip -j All_Tests_logs.zip ${ALL_LOGS_DIR}/*", returnStdout: true)
@@ -396,7 +405,8 @@ catch (err) {
 	//	Write to summary file
 	def write_to_summary(message, ALL_LOGS_DIR ){
 		node('jenkins-slave') {
-			sh (script: "echo ${message} >> ${ALL_LOGS_DIR}/Summary.HTML", returnStdout: true)
+			def date = sh(script:"date '+%D %H:%M:%S'", returnStdout: true).trim()
+			sh (script: "echo ${date} ${message} >> ${ALL_LOGS_DIR}/Summary.HTML", returnStdout: true)
 		}
 	}
 
