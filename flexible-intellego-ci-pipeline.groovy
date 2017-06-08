@@ -11,7 +11,6 @@ def ALL_LOGS_DIR = ""
 def FAILED_LOGS_DIR = ""
 
 
-
 //	Start 
 try {
 	timestamps {
@@ -180,12 +179,18 @@ catch (err) {
 			//	Gather the latest CI scripts.  This is to avoid checking out again and again on all the CI vm's
 			stash name: "build-scripts", includes: "ci/install.sh, ci/copy-datawipe-conf.sh, ci/checkVMC.sh"
 			wrap([$class: 'BuildUser']) {
+				//	If a user started the build, this variable is available.  Else the pipeline was started by timer
+				def BUILDUSER = 'Scheduler'
+				
+				if ( env.BUILD_USER ){
+					BUILDUSER = env.BUILD_USER
+				}
 				//	The email file is generated at /tmp/start_email.HTML of the jenkins-slave server chosen
-				sh (script: "./intellego/start_email.sh -i \"${IP_ADDRESSES}\" -t \"${TEST_SUITES}\" -u \"${BUILD_USER}\" ", returnStdout: false)
+				sh (script: "./intellego/start_email.sh -i \"${IP_ADDRESSES}\" -t \"${TEST_SUITES}\" -u \"${BUILDUSER}\" ", returnStdout: false)
 			
 				emailext mimeType: 'text/html', body: '${FILE,path="/tmp/start_email.HTML"}', \
 					 subject: 'START No:' + env.BUILD_NUMBER + ' Intellego CI Pipeline SRC:' \
-				     + INTELLEGO_CODE_BRANCH + ' REST:' + RESTAPI_BRANCH + ' BY:' + env.BUILD_USER, to: MAILING_LIST
+				     + INTELLEGO_CODE_BRANCH + ' REST:' + RESTAPI_BRANCH + ' BY:' + BUILDUSER, to: MAILING_LIST
 			}
 		}
 	}
@@ -373,7 +378,13 @@ catch (err) {
 			try{
 				ws ("${FAILED_LOGS_DIR}") {
 					wrap([$class: 'BuildUser']) {
-						emailext attachmentsPattern: '*.log, *.html', mimeType: 'text/html', body: '${FILE,path="' + ALL_LOGS_DIR + '/Summary.HTML"}', subject: 'END No:' + env.BUILD_NUMBER + ' Intellego CI Pipeline SRC: ' + INTELLEGO_CODE_BRANCH + ' REST:' + RESTAPI_BRANCH + ' BY:' + env.BUILD_USER, to: MAILING_LIST
+						//	Assume build was started by timer
+						def BUILDUSER = 'Scheduler'
+						//	If a user triggered the build, only then this variable is available
+						if ( env.BUILD_USER ){
+							BUILDUSER = env.BUILD_USER
+						}
+						emailext attachmentsPattern: '*.log, *.html', mimeType: 'text/html', body: '${FILE,path="' + ALL_LOGS_DIR + '/Summary.HTML"}', subject: 'END No:' + env.BUILD_NUMBER + ' Intellego CI Pipeline SRC: ' + INTELLEGO_CODE_BRANCH + ' REST:' + RESTAPI_BRANCH + ' BY:' + BUILDUSER, to: MAILING_LIST
 					}
 				}	
 				sh (script: "zip -j Failed_Tests_logs.zip ${FAILED_LOGS_DIR}/*", returnStdout: true)
