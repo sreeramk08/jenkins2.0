@@ -4,7 +4,7 @@ currentBuild.displayName = CONFIG + '-' + SPL_VERSION
 
 // Global declarations
 
-def WS = '/home/support/jenkins/jenkins20/workspace/Intellego/test-spl-workspace'
+def WS = '/home/support/jenkins/jenkins20/workspace/Intellego/test-spl-workspace-js1'
 def OS_TYPE = ' '
 def ISO_PATH = ' '
 def PROJECT = ' '
@@ -102,19 +102,19 @@ def collect_rpmdb(SPL_VERSION,IP_ADDRESS, WS){
 		//	This step wlll fetch the rpmdb from the vm created and put it in the jenkins-slave-1
 		sh 'cd ' + WS + ' ; echo ${IP_ADDRESS} ansible_password=ss8inc > ansible/hosts; \
                     ansible-playbook -i ansible/hosts ansible/sensor_rpmdb.yaml \
-		            -c paramiko --tags create_rpmdb,fetch_rpmdb --extra-vars "SPL_VERSION=' + SPL_VERSION + '"'
+		            -c paramiko --tags create_rpmdb,fetch_rpmdb --extra-vars "SPL_VERSION=' + SPL_VERSION + ' ansible_sudo_pass=ss8inc ' + '"'
         //	Now push it to one of the ISO Machines
 		if (PLATFORM == 'RHEL-6'){
 			//	Push the rpmdb to the RHEL-6 vm
 			sh 'cd ' + WS + ' ; echo 10.0.225.170 ansible_password=' + ISO_BUILD_USER_PASSWD + ' ansible_user=iso-build-user > ansible/hosts; \
 			ansible-playbook -i ansible/hosts ansible/sensor_rpmdb.yaml \
-			-c paramiko --tags copy_rpmdb --extra-vars "SPL_VERSION=' + SPL_VERSION + ' PLATFORM=' + PLATFORM + '"'
+			-c paramiko --tags copy_rpmdb --extra-vars "SPL_VERSION=' + SPL_VERSION + ' ansible_sudo_pass=ss8inc ' + ' PLATFORM=' + PLATFORM + '"'
 		}
 		else {
 			//	Push the rpmdb to the RHEL-7 vm
 			sh 'cd ' + WS + ' ; echo 10.0.225.171 ansible_password=' + ISO_BUILD_USER_PASSWD + ' ansible_user=iso-build-user > ansible/hosts; \
 			ansible-playbook -i ansible/hosts ansible/sensor_rpmdb.yaml \
-			-c paramiko --tags copy_rpmdb --extra-vars "SPL_VERSION=' + SPL_VERSION + ' PLATFORM=' + PLATFORM + '"'
+			-c paramiko --tags copy_rpmdb --extra-vars "SPL_VERSION=' + SPL_VERSION + ' ansible_sudo_pass=ss8inc ' + ' PLATFORM=' + PLATFORM + '"'
 			node('rhel7-iso-build-machine'){
 				ws('/home/iso-build-user/ISO_BUILD/platform-isos/RHEL-7/addons/devel-addon'){
 					sh 'sudo gmake ci VERSION=' + SPL_VERSION
@@ -155,7 +155,7 @@ def create_vms(host, WS, OS_TYPE, SPL_VERSION){
 	stage ('Creating VM') {
 		
 		// Get the name of the iso based on the project and version.  Either the rhel6 or rhel7 machine can be used
-		node('rhel6-iso-build-machine'){
+		node('rhel7-iso-build-machine'){
 			
 			PROJECT = sh( script: "echo ${CONFIG} | awk -F- '{print \$1}'", returnStdout: true).trim()
 			def ISO_NAME = sh (script: "ssh isoadmin@10.0.155.54 \"ls /ISOFolder/SPL | grep ${PROJECT}  | grep ${SPL_VERSION} | grep -v upgrade\" ", returnStdout: true ).trim()
