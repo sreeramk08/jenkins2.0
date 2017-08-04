@@ -7,7 +7,7 @@ stage('Release ISO'){
 	
 		if (PLATFORM == 'RHEL-6') {
 				
-			node('rhel6-iso-build-machine'){
+			node('rhel6-spl-build-vm-165-31'){
 				deleteDir()
 				git url: 'git@bitbucket.org:ss8/scripts.git', branch: 'master'
 				sh 'chmod +x iso/push_to_releases.sh; sh -x iso/push_to_releases.sh ' + PLATFORM + ' ' +  PROJECT + ' ' + VERSION
@@ -17,7 +17,7 @@ stage('Release ISO'){
 		}
 		else if (PLATFORM == 'RHEL-7') {
 		
-			node('rhel7-iso-build-machine'){
+			node('rhel7-spl-build-vm-165-29'){
 				deleteDir()
 				git url: 'git@bitbucket.org:ss8/scripts.git', branch: 'master'
 				sh 'chmod +x iso/push_to_releases.sh; sh -x iso/push_to_releases.sh ' + PLATFORM + ' ' +  PROJECT + ' ' + VERSION
