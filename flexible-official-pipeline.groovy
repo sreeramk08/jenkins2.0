@@ -239,7 +239,9 @@ catch (err) {
 				//	Try to checkout the code
 				try {
                     echo "Checking out code..."
-                    sh 'umask 0022; git clone ssh://git@10.0.135.6/intellego.git . ; git checkout ' +  INTELLEGO_CODE_BRANCH
+                    // sh 'umask 0022; git clone ssh://git@10.0.135.6/intellego.git . ; git checkout ' +  INTELLEGO_CODE_BRANCH
+					// sh 'umask 0022; git clone git@bitbucket.org:ss8/intellego.git . ; git checkout ' +  INTELLEGO_CODE_BRANCH
+					sh 'umask 0022; git clone -b ' + INTELLEGO_CODE_BRANCH + ' --single-branch git@bitbucket.org:ss8/intellego.git . '
                 }
                 catch(err) {
                     currentBuild.result = 'FAILURE'
@@ -259,7 +261,7 @@ catch (err) {
                 }
 
                 def PrevBuildNumber = " "
-	    		def SEARCH = INTELLEGO_VERSION + '.' + MINOR_VERSION + '.' + PATCH_VERSION  // search for 6.6.1.0
+	    		def SEARCH = INTELLEGO_VERSION + '.' + MINOR_VERSION + '.' + PATCH_VERSION + '.' // search for 6.6.1.0
         		try	{
         			PrevBuildNumber = sh(script: " git tag | grep ${SEARCH}* | tail -1 | rev | cut -d. -f1 | rev", returnStdout: true).trim()
        			}
@@ -349,7 +351,7 @@ catch (err) {
 	
 //	Deploy binary to VM's and install
 	def deploy(IS, INTELLEGO_IP, VMC_IP, ALL_LOGS_DIR) {
-		def NTPDATE = 'sudo -u root -i service ntpd stop; sudo -u root -i ntpdate 10.0.158.153; sudo -u root -i service ntpd start'
+		def NTPDATE = 'sudo -u root -i service ntpd stop; sudo -u root -i ntpdate 10.0.156.153; sudo -u root -i service ntpd start'
 		def COPY_BINARY = 'sudo rm -f /SS8/SS8_Intellego.bin; sudo mv SS8*.bin /SS8/SS8_Intellego.bin; sudo chmod 775 /SS8/SS8_Intellego.bin'
 		def INTELLEGO_RESTART = 'sudo -u root -i /etc/init.d/intellego restart'
 		def INTELLEGOOAMP_START = 'sudo -u root -i /opt/intellego/Base/bin/intellegooamp-super start'
