@@ -3,7 +3,7 @@
 */
 
 //	Set the name of the Jenkins build
-currentBuild.displayName = 'No:' + env.BUILD_NUMBER + ' VER:' +INTELLEGO_VERSION + ' SRC:' + INTELLEGO_CODE_BRANCH + ' REST:' + RESTAPI_BRANCH 
+currentBuild.displayName = 'No:' + env.BUILD_NUMBER + ' VER:' + INTELLEGO_VERSION + ' SRC:' + INTELLEGO_CODE_BRANCH + ' REST:' + RESTAPI_BRANCH 
 
 def IP_ADDRESSES = ""
 def TEST_SUITES = ""
@@ -15,10 +15,12 @@ def FAILED_LOGS_DIR = ""
 try {
 	timestamps {
 		node ('jenkins-slave') {
+				
 			// 	Create temp directories for storing the logs. Support for builds running in parallel as well by adding the build number at the end. 
 				FAILED_LOGS_DIR =  '/var/www/html/ci-logs/failed-rest-api-flexible-' + RESTAPI_BRANCH  + '-' + env.BUILD_NUMBER
-				ALL_LOGS_DIR    =  '/var/www/html/ci-logs/all-rest-api-flexible-'    + RESTAPI_BRANCH  + '-' + env.BUILD_NUMBER
-		
+				def LOGSDIR = 'all-rest-api-flexible-'    + RESTAPI_BRANCH  + '-' + env.BUILD_NUMBER
+			    ALL_LOGS_DIR = '/var/www/html/ci-logs/' + LOGSDIR
+
 			//	Cleanup and recreate 
 				sh (script: "rm -rf ${FAILED_LOGS_DIR} ${ALL_LOGS_DIR}", returnStdout: false )
 				sh (script: "mkdir -p ${FAILED_LOGS_DIR} ${ALL_LOGS_DIR}", returnStdout: false)
@@ -29,14 +31,16 @@ try {
 								sed -e 'H;\${x;s/\\n/,/g;s/^,//;p;};d'", returnStdout: true).trim()
 				
 			//	We want to make sure no. of pairs chosen is not more than suites. No point in reserving a pair without a suite to run
-				NO_OF_TEST_SUITES = sh (script: "env | grep 'tests=true' | sed 's/=true//g' | wc -l", returnStdout:true).trim()
+				def NO_OF_TEST_SUITES = sh (script: "env | grep 'tests=true' | sed 's/=true//g' | wc -l", returnStdout:true).trim()
 				
-				if ( PAIRS_TO_USE > NO_OF_TEST_SUITES ){
-					PAIRS_TO_USE  =  NO_OF_TEST_SUITES
-				}
+				echo "Original pairs: " + PAIRS_TO_USE
+				echo "Number of test suites: " + NO_OF_TEST_SUITES
 				
-				echo "INFO: Got TEST_SUITES as " + TEST_SUITES
-			
+				PAIRS_TO_USE = sh (script: "if (( $PAIRS_TO_USE > $NO_OF_TEST_SUITES )); then echo $NO_OF_TEST_SUITES; else echo $PAIRS_TO_USE; fi", returnStdout: true)
+				
+				echo "Now number of pairs: " + PAIRS_TO_USE
+				// echo "INFO: Got TEST_SUITES as " + TEST_SUITES
+			    
 			//	Get the IP addresses to work with. Master list resides (only) on jenkins-slave-1.  
 				node('jenkins-slave-1'){
 					try{
@@ -55,7 +59,9 @@ try {
 				prepare_summary(ALL_LOGS_DIR, INTELLEGO_CODE_BRANCH, RESTAPI_BRANCH, IP_ADDRESSES, TEST_SUITES)
 			
 			// 	Send starting email
-				send_starting_email(MAILING_LIST, IP_ADDRESSES, TEST_SUITES)
+			    send_starting_email(MAILING_LIST, IP_ADDRESSES, TEST_SUITES, LOGSDIR, INTELLEGO_VERSION)
+				
+				update_progress_bar(10, RESTAPI_BRANCH, INTELLEGO_CODE_BRANCH)
 		
 			// 	If running only tests skip building binary
 				if ( ONLY_RUN_TESTS == 'false' ) {
@@ -102,7 +108,11 @@ try {
 			
 			//	Give back the IPs for next CI
 				give_back_ips(IP_ADDRESSES)
-
+			
+			// 	Post results to ci ops dashboard
+			if (INTELLEGO_CODE_BRANCH == 'master' && RESTAPI_BRANCH == 'master'){
+				post_to_ci_dashboard(LOGSDIR)
+			}
 		} // End of "node" block
 	} // End of "timestamp" block
 } // End of "try" block
@@ -147,11 +157,24 @@ catch (err) {
 					}
 					else {
 						// 	Proceed to testing
+						update_progress_bar(50, RESTAPI_BRANCH, INTELLEGO_CODE_BRANCH)
 						run_suites(IS, ALL_LOGS_DIR, "/tmp/${INTELLEGO_IP}-${VMC_IP}.yaml")
 					}
 				}	
 			}	
 		} 	
+	}
+
+
+	
+// Update progress bar
+	def update_progress_bar(VAL, RESTAPI_BRANCH, INTELLEGO_CODE_BRANCH){
+		if (INTELLEGO_CODE_BRANCH == 'master' && RESTAPI_BRANCH == 'master'){
+			node('jenkins-slave-1'){
+				sh (script: "curl -d '{\"auth_token\": \"YOUR_AUTH_TOKEN\", \"progress_items\":[{ \"name\": \"Progress\", \
+			             \"progress\": ${VAL}, \"warning\": \"105\", \"critical\": \"110\", \"localScope\": \"0\"}]}' \\https://intellego-dashboard.herokuapp.com/widgets/progress_bars", returnStdout:true)
+			}
+		}
 	}
 
 //	Prepare the summary html file that will be emailed out at the very end
@@ -169,14 +192,26 @@ catch (err) {
 		sh 'echo "<p>Console Output: <a href= "' + env.BUILD_URL + '"consoleFull>"' + env.BUILD_URL + '"consoleFull</a>"' + ' >> ' + ALL_LOGS_DIR + '/Summary.HTML'
 		sh 'echo "<p>Rest API Logs: <a href="http://10.0.156.71/ci-logs/all-rest-api-flexible-"' + RESTAPI_BRANCH + '-' + env.BUILD_NUMBER + '>Logs</a>" >> ' + ALL_LOGS_DIR + '/Summary.HTML'
 		sh 'echo "<p><b>Progress Log:</b><br>" >> ' + ALL_LOGS_DIR + '/Summary.HTML'
+		
+		//	Populate the dashboard with branch data
+		if (INTELLEGO_CODE_BRANCH == 'master' && RESTAPI_BRANCH == 'master'){
+			node('jenkins-slave-1'){
+				sh (script: "curl -d '{ \"auth_token\": \"YOUR_AUTH_TOKEN\", \"text\": \"${INTELLEGO_CODE_BRANCH}\", \"value\": 0 }' \
+						\\https://intellego-dashboard.herokuapp.com/widgets/response_intellego_src_branch", returnStdout: true)
+						
+				sh (script: "curl -d '{ \"auth_token\": \"YOUR_AUTH_TOKEN\", \"text\": \"${RESTAPI_BRANCH}\", \"value\": 0 }' \
+						\\https://intellego-dashboard.herokuapp.com/widgets/response_rest_api_src_branch", returnStdout: true)
+			}
+		}
 	}
 	
 //	Draft and send an email at the very beginning
-	def send_starting_email(MAILING_LIST, IP_ADDRESSES, TEST_SUITES){
+	def send_starting_email(MAILING_LIST, IP_ADDRESSES, TEST_SUITES, LOGSDIR, VERSION_TO_BUILD){
 		node ('jenkins-slave') {
 			//	deleteDir()
 			git url: 'git@bitbucket.org:ss8/scripts.git', branch: 'master'
 			//	Gather the latest CI scripts.  This is to avoid checking out again and again on all the CI vm's
+
 			stash name: "build-scripts", includes: "ci/install.sh, ci/copy-datawipe-conf.sh, ci/checkVMC.sh"
 			wrap([$class: 'BuildUser']) {
 				//	If a user started the build, this variable is available.  Else the pipeline was started by timer
@@ -186,8 +221,8 @@ catch (err) {
 					BUILDUSER = env.BUILD_USER
 				}
 				//	The email file is generated at /tmp/start_email.HTML of the jenkins-slave server chosen
-				sh (script: "./intellego/start_email.sh -i \"${IP_ADDRESSES}\" -t \"${TEST_SUITES}\" -u \"${BUILDUSER}\" ", returnStdout: false)
-			
+				sh (script: "./intellego/start_email.sh -i \"${IP_ADDRESSES}\" -t \"${TEST_SUITES}\" -u \"${BUILDUSER}\" \
+				             -l \"${LOGSDIR}\" -v \"${INTELLEGO_VERSION}\" ", returnStdout: false)			
 				emailext mimeType: 'text/html', body: '${FILE,path="/tmp/start_email.HTML"}', \
 					 subject: 'START No:' + env.BUILD_NUMBER + ' Intellego CI Pipeline SRC:' \
 				     + INTELLEGO_CODE_BRANCH + ' REST:' + RESTAPI_BRANCH + ' BY:' + BUILDUSER, to: MAILING_LIST
@@ -229,7 +264,11 @@ catch (err) {
 				
 				ws('/home/support/intellego') {
 					echo "Checking out code..."
-					git url: 'ssh://git@10.0.135.6/intellego.git', branch: INTELLEGO_CODE_BRANCH
+					//git url: 'ssh://git@10.0.135.6/intellego.git', branch: INTELLEGO_CODE_BRANCH
+					//git url: 'git@bitbucket.org:ss8/intellego.git', branch: INTELLEGO_CODE_BRANCH
+					//sh 'git stash ; git stash drop -q | true; git lfs pull; git pull'
+				    sh 'git pull; git lfs pull'	
+					
 				}
 				
 				// 	Cleanup old binary
@@ -262,36 +301,10 @@ catch (err) {
 	
 //	Deploy binary to VM's and install
 	def deploy(IS, INTELLEGO_IP, VMC_IP, ALL_LOGS_DIR) {
-		def NTPDATE = 'sudo -u root -i service ntpd stop; sudo -u root -i ntpdate 10.0.158.153; sudo -u root -i service ntpd start'
+		def NTPDATE = 'sudo -u root -i service ntpd stop; sudo -u root -i ntpdate 10.0.156.153; sudo -u root -i service ntpd start'
 		def COPY_BINARY = 'sudo rm -f /SS8/SS8_Intellego.bin; sudo mv SS8*.bin /SS8/SS8_Intellego.bin; sudo chmod 775 /SS8/SS8_Intellego.bin'
 		def INTELLEGO_RESTART = 'sudo -u root -i /etc/init.d/intellego restart'
 		def INTELLEGOOAMP_START = 'sudo -u root -i /opt/intellego/Base/bin/intellegooamp-super start'
-		
-		node(VMC_IP){
-			write_to_summary("INFO: Deploying to ${VMC_IP}\\<br\\>", ALL_LOGS_DIR)
-			//	Remove any other bin files to avoid runnning out of diskspace as well as wrong versions
-			def exists = fileExists 'SS8*.bin'
-			if (exists) {
-				sh 'sudo rm -f SS8*.bin'
-			}
-			deleteDir() //	To remove any other bin files that might be there
-			unarchive mapping: ['*.bin' : '.']
-			sh COPY_BINARY
-			
-			unstash "build-scripts"		// will unstash in a folder called ci
-			sh NTPDATE  
-			def INSTALL_SCRIPT = sh (script: "readlink -f ./ci/install.sh", returnStdout: true).trim()
-				try{
-					write_to_summary("INFO: Installing on ${VMC_IP}\\<br\\>", ALL_LOGS_DIR)
-					timeout(time:30, unit:'MINUTES'){
-						sh (script: "chmod +x ${INSTALL_SCRIPT}; sudo -u root -i ${INSTALL_SCRIPT} -b ${INTELLEGO_CODE_BRANCH} > /dev/null 2>&1", returnStdout: true)
-					}
-					write_to_summary("SUCCESS:Installed on ${VMC_IP}\\<br\\>", ALL_LOGS_DIR)
-				}
-				catch(err){
-					write_to_summary("FAILED:Installing on ${VMC_IP}\\<br\\>", ALL_LOGS_DIR)
-				}
-		}
 		
 		node(INTELLEGO_IP){
 			write_to_summary("INFO: Deploying to ${INTELLEGO_IP}\\<br\\>", ALL_LOGS_DIR)
@@ -304,7 +317,8 @@ catch (err) {
 			deleteDir() //	To remove any other bin files that might be there 
 			unarchive mapping: ['*.bin' : '.']
 			sh COPY_BINARY
-			
+			//Ankit added to test
+			sh 'sudo umount /NAS/ContentVMC'
 			sh 'sudo mount -a'
 			unstash "build-scripts"
 			sh NTPDATE
@@ -329,6 +343,31 @@ catch (err) {
 				sh (script: "chmod +x ${COPY_DATAWIPE_CONF}; sudo -u root -i ${COPY_DATAWIPE_CONF}", returnStdout: true)
 				
 				//sh CHECKPORTS
+		}
+		node(VMC_IP){
+			write_to_summary("INFO: Deploying to ${VMC_IP}\\<br\\>", ALL_LOGS_DIR)
+			//	Remove any other bin files to avoid runnning out of diskspace as well as wrong versions
+			def exists = fileExists 'SS8*.bin'
+			if (exists) {
+				sh 'sudo rm -f SS8*.bin'
+			}
+			deleteDir() //	To remove any other bin files that might be there
+			unarchive mapping: ['*.bin' : '.']
+			sh COPY_BINARY
+			
+			unstash "build-scripts"		// will unstash in a folder called ci
+			sh NTPDATE  
+			def INSTALL_SCRIPT = sh (script: "readlink -f ./ci/install.sh", returnStdout: true).trim()
+				try{
+					write_to_summary("INFO: Installing on ${VMC_IP}\\<br\\>", ALL_LOGS_DIR)
+					timeout(time:30, unit:'MINUTES'){
+						sh (script: "chmod +x ${INSTALL_SCRIPT}; sudo -u root -i ${INSTALL_SCRIPT} -b ${INTELLEGO_CODE_BRANCH} > /dev/null 2>&1", returnStdout: true)
+					}
+					write_to_summary("SUCCESS:Installed on ${VMC_IP}\\<br\\>", ALL_LOGS_DIR)
+				}
+				catch(err){
+					write_to_summary("FAILED:Installing on ${VMC_IP}\\<br\\>", ALL_LOGS_DIR)
+				}
 		}
 		
 		node(VMC_IP) {
@@ -368,6 +407,7 @@ catch (err) {
 //	Process the rest api results to figure out how many failed, etc.
 	def process_restapi_results(ALL_LOGS_DIR, FAILED_LOGS_DIR){
 		echo "Processing rest api test results!"
+		update_progress_bar(90, RESTAPI_BRANCH, INTELLEGO_CODE_BRANCH)
 		sh (script: "./intellego/process_restapi_results.sh ${ALL_LOGS_DIR} ${FAILED_LOGS_DIR}", returnStdout: false)
 	}
 
@@ -410,14 +450,23 @@ catch (err) {
 				currentBuild.result = 'FAILURE'
 				throw err
 			}	
+			update_progress_bar(100, RESTAPI_BRANCH, INTELLEGO_CODE_BRANCH)
 		}
 	}
 
-	//	Write to summary file
+//	Write to summary file
 	def write_to_summary(message, ALL_LOGS_DIR ){
 		node('jenkins-slave') {
 			def date = sh(script:"date '+%D %H:%M:%S'", returnStdout: true).trim()
 			sh (script: "echo ${date} ${message} >> ${ALL_LOGS_DIR}/Summary.HTML", returnStdout: true)
+		}
+	}
+
+// 	Update the ops dashboard with restapi results
+	def post_to_ci_dashboard(LOGSDIR){
+		node ('jenkins-slave-1') {
+			//	For whatever reason have to use URLY (or something else) instead of URL. 
+			build job: 'dashboard-hipchat-reporting', parameters: [[ $class: 'StringParameterValue', name: 'LOGS_DIR', value: LOGSDIR ], [ $class: 'StringParameterValue', name: 'URLY', value: 'https://intellego-dashboard.herokuapp.com' ]]
 		}
 	}
 
