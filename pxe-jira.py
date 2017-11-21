@@ -7,11 +7,20 @@ import commands
 import os
 import traceback
 
+'''
+Usage: ./jira/pxe-jira.py create_release -n ' + RELEASE_NAME + ' -d ' + RELEASE_DATE + ' -t ' + TKTS_RESOLVED_TXT + JIRA_AUTH
+
+./jira/pxe-jira.py create_release -n ' + RELEASE_NAME + ' -d ' + RELEASE_DATE + ' -t ' + TKTS_RESOLVED_TXT + JIRA_AUTH
+
+JIRA_AUTH = ' -u ' + JIRA_USER + ' -p ' + JIRA_PSWD
+
+'''
+
 class Jira(object):
     """Python-Jira API class"""
     def __init__(self, args):
         """Init"""
-        self.jira_server = 'https://ss8inc.atlassian.net'
+        self.jira_server = 'https://company.jira.net'
         self.jira = JIRA('%s' % self.jira_server, basic_auth=(args.jira_user,args.jira_pswd))
 
         # Arguments
