@@ -32,12 +32,10 @@ try {
 						  sed -e 'H;\${x;s/\\n/,/g;s/^,//;p;};d'", returnStdout: true).trim()
 				
 			//	We want to make sure no. of pairs chosen is not more than suites. No point in reserving a pair without a suite to run
-			NO_OF_TEST_SUITES = sh (script: "env | grep 'tests=true' | sed 's/=true//g' | wc -l", returnStdout:true).trim()
+			def NO_OF_TEST_SUITES = sh (script: "env | grep 'tests=true' | sed 's/=true//g' | wc -l", returnStdout:true).trim()
 			
-			if ( PAIRS_TO_USE > NO_OF_TEST_SUITES ){
-				PAIRS_TO_USE  =  NO_OF_TEST_SUITES
-			}
-				
+			PAIRS_TO_USE = sh (script: "if (( $PAIRS_TO_USE > $NO_OF_TEST_SUITES )); then echo $NO_OF_TEST_SUITES; else echo $PAIRS_TO_USE; fi", returnStdout: true)
+
 			echo "INFO: Got TEST_SUITES as " + TEST_SUITES
 			
 			//	Get the IP addresses to work with. Master list resides (only) on jenkins-slave-1.  
@@ -69,7 +67,12 @@ try {
 				else {
 					build_intellego_binary (INTELLEGO_CODE_BRANCH, INTELLEGO_VERSION, MAILING_LIST, ALL_LOGS_DIR, LOGSDIR, VERSION_TO_BUILD, IP_ADDRESSES, TEST_SUITES)
 				} 
-			} 
+			}
+
+			else {
+
+				currentBuild.displayName = 'ONLY_RUN_TESTS'
+			}
 				
 			// 	Create the test environments based on the IP addresses supplied
 				create_env(IP_ADDRESSES)
@@ -90,7 +93,7 @@ try {
 					//	echo "Parallel steps: " + step
 					def stepName = "${step}"
         
-					stepsForParallel[stepName] = parallelstep(step, ALL_LOGS_DIR, FAILED_LOGS_DIR)
+					stepsForParallel[stepName] = parallelstep(step, ALL_LOGS_DIR, FAILED_LOGS_DIR, VERSION_TO_BUILD)
 				}
 			
 			//	Spawn the parallel blocks	
@@ -123,7 +126,7 @@ catch (err) {
 
 
 // 	Create the parallel steps
-	def parallelstep(inputString, ALL_LOGS_DIR, FAILED_LOGS_DIR) {
+	def parallelstep(inputString, ALL_LOGS_DIR, FAILED_LOGS_DIR, VERSION_TO_BUILD) {
 		return {
 			node ('jenkins-slave-1') {
 				 
@@ -193,7 +196,7 @@ catch (err) {
 				             -l \"${LOGSDIR}\" -v \"${VERSION_TO_BUILD}\" ", returnStdout: false)
 			
 				emailext mimeType: 'text/html', body: '${FILE,path="/tmp/start_email.HTML"}', \
-					 subject: 'START No:' + env.BUILD_NUMBER + ' Intellego **Official** Pipeline SRC:' \
+					 subject: 'START No:' + env.BUILD_NUMBER + ' Intellego Official Pipeline SRC:' \
 				     + INTELLEGO_CODE_BRANCH + ' REST:' + RESTAPI_BRANCH + ' BY:' + BUILDUSER, to: MAILING_LIST
 			}
 		}
@@ -235,14 +238,17 @@ catch (err) {
 			
 			node ('intellego-official-build-machine') {
 				//	Have to delete and re-checkout as git clone will not checkout into an existing repo
-				deleteDir()
+				// deleteDir()
 				//	Try to checkout the code
 				try {
                     echo "Checking out code..."
                     // sh 'umask 0022; git clone ssh://git@10.0.135.6/intellego.git . ; git checkout ' +  INTELLEGO_CODE_BRANCH
 					// sh 'umask 0022; git clone git@bitbucket.org:ss8/intellego.git . ; git checkout ' +  INTELLEGO_CODE_BRANCH
-					sh 'umask 0022; git clone -b ' + INTELLEGO_CODE_BRANCH + ' --single-branch git@bitbucket.org:ss8/intellego.git . '
-                }
+					//sh 'umask 0022; git clone -b ' + INTELLEGO_CODE_BRANCH + ' --single-branch git@bitbucket.org:ss8/intellego.git . '
+                    sh 'umask 0022; git checkout -f ' + INTELLEGO_CODE_BRANCH 
+                    sh 'git lfs pull; git pull'
+				    
+				}
                 catch(err) {
                     currentBuild.result = 'FAILURE'
                     emailext body: 'Could not check out code from: ' + INTELLEGO_CODE_BRANCH, subject: 'Official Build failed', to: MAILING_LIST
@@ -294,12 +300,30 @@ catch (err) {
             		VERSION_TO_BUILD = INTELLEGO_VERSION + '.' + MINOR_VERSION +'.' + PATCH_VERSION + '.0' + NEXT_BUILD_NUMBER
        			 }
         		echo "Current build number is: " + VERSION_TO_BUILD
+
+        		
+
         		// 	Set the name of the current build in Jenkins
         		currentBuild.displayName = VERSION_TO_BUILD
         
         		// 	Send starting email
 				send_starting_email(MAILING_LIST, IP_ADDRESSES, TEST_SUITES, LOGSDIR, VERSION_TO_BUILD)
                 
+                // 	Tag the intellego-rest-api repo as well DO-192
+        		try {
+        			ws("restapi"){		
+        			   git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
+            		   sh 'git tag -a ' + VERSION_TO_BUILD + ' -m "Intellego Official Build No. ' + VERSION_TO_BUILD + '"'
+            		   sh 'git push origin ' + VERSION_TO_BUILD
+            	    }
+        		}
+        		catch(err){
+            		// 	If tagging failed or if the tag already exists, fail the build
+	        		currentBuild.result = 'FAILURE'
+    	    		emailext body: 'Please investigate. ' +  VERSION_TO_BUILD, subject: 'Tagging rest-api repo during official build failed!', to: MAILING_LIST
+            		throw err
+        		}
+
                 //	Tag Git and Build the binary
                 try {
                     sh 'git tag -a ' + VERSION_TO_BUILD + ' -m "Intellego Build No. ' + VERSION_TO_BUILD + '"'
@@ -311,6 +335,8 @@ catch (err) {
     	            emailext body: 'A tag already exists! ' +  VERSION_TO_BUILD, subject: 'Official build failed!', to: MAILING_LIST
                     throw err
                 }
+
+                
                 
                 //	Determine changes depending on if its a first build or not
 	            if 	( FIRST_BUILD == "yes" ){
@@ -355,32 +381,8 @@ catch (err) {
 		def COPY_BINARY = 'sudo rm -f /SS8/SS8_Intellego.bin; sudo mv SS8*.bin /SS8/SS8_Intellego.bin; sudo chmod 775 /SS8/SS8_Intellego.bin'
 		def INTELLEGO_RESTART = 'sudo -u root -i /etc/init.d/intellego restart'
 		def INTELLEGOOAMP_START = 'sudo -u root -i /opt/intellego/Base/bin/intellegooamp-super start'
-		
-		node(VMC_IP){
-			write_to_summary("INFO: Deploying to ${VMC_IP}\\<br\\>", ALL_LOGS_DIR)
-			//	Remove any other bin files to avoid runnning out of diskspace as well as wrong versions
-			def exists = fileExists 'SS8*.bin'
-			if (exists) {
-				sh 'sudo rm -f SS8*.bin'
-			}
-			deleteDir() //	To remove any other bin files that might be there
-			unarchive mapping: ['*.bin' : '.']
-			sh COPY_BINARY
-			
-			unstash "build-scripts"		// will unstash in a folder called ci
-			sh NTPDATE  
-			def INSTALL_SCRIPT = sh (script: "readlink -f ./ci/install.sh", returnStdout: true).trim()
-				try{
-					write_to_summary("INFO: Installing on ${VMC_IP}\\<br\\>", ALL_LOGS_DIR)
-					timeout(time:30, unit:'MINUTES'){
-						sh (script: "chmod +x ${INSTALL_SCRIPT}; sudo -u root -i ${INSTALL_SCRIPT} -b ${INTELLEGO_CODE_BRANCH} > /dev/null 2>&1", returnStdout: true)
-					}
-					write_to_summary("SUCCESS:Installed on ${VMC_IP}\\<br\\>", ALL_LOGS_DIR)
-				}
-				catch(err){
-					write_to_summary("FAILED:Installing on ${VMC_IP}\\<br\\>", ALL_LOGS_DIR)
-				}
-		}
+
+		//	Deploy on Intellego first and then VMC IP. DO-168 
 		
 		node(INTELLEGO_IP){
 			write_to_summary("INFO: Deploying to ${INTELLEGO_IP}\\<br\\>", ALL_LOGS_DIR)
@@ -420,6 +422,32 @@ catch (err) {
 				//sh CHECKPORTS
 		}
 		
+		node(VMC_IP){
+			write_to_summary("INFO: Deploying to ${VMC_IP}\\<br\\>", ALL_LOGS_DIR)
+			//	Remove any other bin files to avoid runnning out of diskspace as well as wrong versions
+			def exists = fileExists 'SS8*.bin'
+			if (exists) {
+				sh 'sudo rm -f SS8*.bin'
+			}
+			deleteDir() //	To remove any other bin files that might be there
+			unarchive mapping: ['*.bin' : '.']
+			sh COPY_BINARY
+			
+			unstash "build-scripts"		// will unstash in a folder called ci
+			sh NTPDATE  
+			def INSTALL_SCRIPT = sh (script: "readlink -f ./ci/install.sh", returnStdout: true).trim()
+				try{
+					write_to_summary("INFO: Installing on ${VMC_IP}\\<br\\>", ALL_LOGS_DIR)
+					timeout(time:30, unit:'MINUTES'){
+						sh (script: "chmod +x ${INSTALL_SCRIPT}; sudo -u root -i ${INSTALL_SCRIPT} -b ${INTELLEGO_CODE_BRANCH} > /dev/null 2>&1", returnStdout: true)
+					}
+					write_to_summary("SUCCESS:Installed on ${VMC_IP}\\<br\\>", ALL_LOGS_DIR)
+				}
+				catch(err){
+					write_to_summary("FAILED:Installing on ${VMC_IP}\\<br\\>", ALL_LOGS_DIR)
+				}
+		}
+
 		node(VMC_IP) {
 			write_to_summary("SUCCESS:Post Install steps on ${VMC_IP}\\<br\\>", ALL_LOGS_DIR)
 			def CHECKVMC = sh (script: "readlink -f ./ci/checkVMC.sh", returnStdout: true).trim()
@@ -445,6 +473,8 @@ catch (err) {
 		echo "INFO: IS inside run_suites as: " + IS
 		deleteDir()
 		git url: 'git@bitbucket.org:ss8/intellego-rest-api.git', branch: RESTAPI_BRANCH
+
+		
 		// 	To avoid conflicting with another directory called scripts inside the intellego repo, checkout within a repo called ci_scripts
 		dir('ci_scripts'){
 			git url: 'git@bitbucket.org:ss8/scripts.git', branch: 'master'
@@ -496,7 +526,7 @@ catch (err) {
 				echo "Successfully released the IPs"
 			}
 			catch(err) {
-				emailext subject: 'FAILED No:' + env.BUILD_NUMBER + ' Could not free-up the IPs!', to: MAILING_LIST
+				emailext subject: 'FAILED No:' + env.BUILD_NUMBER + 'Official Build. Could not free-up the IPs!', to: 'skrishna@ss8.com'
 				currentBuild.result = 'FAILURE'
 				throw err
 			}	
@@ -557,3 +587,5 @@ catch (err) {
         sh 'git log --pretty=format:"%s    %an" ' + PREV_BUILD_NUMBER + '...' + VERSION_TO_BUILD + ' >> Changes.log'
         archive 'Changes.log'
 	}
+
+
